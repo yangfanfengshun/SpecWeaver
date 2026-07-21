@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "specweaver-tower": {
+      "command": "/bin/bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh", "tower"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    },
+    "specweaver-eolink": {
+      "command": "/bin/bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh", "eolink"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    },
+    "specweaver-lanhu": {
+      "command": "/bin/bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh", "lanhu"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    }
+  }
+}

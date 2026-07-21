@@ -1,0 +1,21 @@
+{
+  "name": "specweaver",
+  "owner": {
+    "name": "Yangfan"
+  },
+  "metadata": {
+    "description": "SpecWeaver：把 Tower、蓝湖和 Eolink 的分散上下文编织成可追溯的需求资料。"
+  },
+  "plugins": [
+    {
+      "name": "specweaver",
+      "source": "./",
+      "description": "把 Tower、蓝湖和 Eolink 的分散上下文编织成可追溯的需求资料。",
+      "version": "0.4.0",
+      "author": {
+        "name": "Yangfan"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

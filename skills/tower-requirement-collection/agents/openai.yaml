@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tower 需求资料收集"
+  short_description: "按状态机分析 Tower 并整理设计稿与 API 资料"
+  default_prompt: "Use $tower-requirement-collection to analyze this Tower task and let me choose the processing mode."

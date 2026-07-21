@@ -1,0 +1,7 @@
+interface:
+  display_name: "配置 SpecWeaver"
+  short_description: "安全配置并验证 Tower、Eolink 和蓝湖认证"
+  default_prompt: "请运行 SpecWeaver 配置向导并验证所有已启用的数据源。"
+
+policy:
+  allow_implicit_invocation: true

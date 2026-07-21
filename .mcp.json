@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "specweaver-tower": {
+      "command": "/bin/bash",
+      "args": ["./scripts/run-mcp.sh", "tower"],
+      "cwd": "."
+    },
+    "specweaver-eolink": {
+      "command": "/bin/bash",
+      "args": ["./scripts/run-mcp.sh", "eolink"],
+      "cwd": "."
+    },
+    "specweaver-lanhu": {
+      "command": "/bin/bash",
+      "args": ["./scripts/run-mcp.sh", "lanhu"],
+      "cwd": "."
+    }
+  }
+}

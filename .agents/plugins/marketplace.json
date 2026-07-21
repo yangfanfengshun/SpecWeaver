@@ -1,0 +1,20 @@
+{
+  "name": "yf-dev",
+  "interface": {
+    "displayName": "SpecWeaver"
+  },
+  "plugins": [
+    {
+      "name": "specweaver",
+      "source": {
+        "source": "url",
+        "url": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

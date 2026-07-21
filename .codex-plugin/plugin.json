@@ -1,0 +1,38 @@
+{
+  "name": "specweaver",
+  "version": "0.4.0",
+  "description": "需求编织器：读取 Tower、蓝湖和 Eolink，支持快速分析与完整资料收集，并生成可追溯的需求文档。",
+  "author": {
+    "name": "Yangfan",
+    "url": "https://github.com/yangfanfengshun"
+  },
+  "homepage": "https://github.com/yangfanfengshun/yf-dev#readme",
+  "repository": "https://github.com/yangfanfengshun/yf-dev",
+  "keywords": [
+    "requirements",
+    "tower",
+    "lanhu",
+    "eolink",
+    "documentation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "SpecWeaver",
+    "shortDescription": "把分散上下文编织成可执行的需求资料",
+    "longDescription": "读取 Tower 正文、评论、子任务与附件，并按任务类型进入快速分析或完整资料收集；完整模式可结合蓝湖设计稿与 Eolink API，生成相互关联的 requirement.md、api.md 和本地图片证据。",
+    "developerName": "Yangfan",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/yangfanfengshun/yf-dev#readme",
+    "defaultPrompt": [
+      "读取这个 Tower 任务，先让我选择快速分析或完整资料收集。",
+      "检查这个 Tower 任务缺少哪些设计稿或 API 资料。",
+      "把 Tower、蓝湖和 Eolink 编织成可追溯的需求资料。"
+    ]
+  }
+}
