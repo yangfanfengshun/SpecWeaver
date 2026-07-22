@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "SpecWeaver：把分散上下文编织成可执行的需求资料。",
-    "version": "0.4.2"
+    "version": "0.4.3"
   },
   "plugins": [
     {

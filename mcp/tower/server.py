@@ -114,15 +114,33 @@ def text_of(element) -> str:
     return element.get_text(" ", strip=True) if element else ""
 
 
-def clean_html(element) -> str:
+def parse_ordered_content(element) -> dict:
     soup = BeautifulSoup(str(element), "html.parser")
     for tag in soup.find_all(["script", "style"]):
         tag.decompose()
+    images = []
     for image in soup.find_all("img"):
         src = image.get("src", "")
         alt = image.get("alt", "")
-        image.replace_with(f"[图片: {alt or src}]" if src else alt)
-    return soup.get_text("\n", strip=True)
+        if not src:
+            image.replace_with(alt)
+            continue
+        images.append({
+            "position": len(images) + 1,
+            "source_url": src,
+            "alt": alt,
+        })
+        escaped_alt = (alt or f"Tower 图片 {len(images)}").replace("\\", "\\\\")
+        escaped_alt = escaped_alt.replace("[", "\\[").replace("]", "\\]")
+        image.replace_with(f"![{escaped_alt}]({src})")
+    return {
+        "text": soup.get_text("\n", strip=True),
+        "images": images,
+    }
+
+
+def clean_html(element) -> str:
+    return parse_ordered_content(element)["text"]
 
 
 def validate_tower_todo_url(url: str) -> str | None:
@@ -225,16 +243,38 @@ async def post_comment(
     return response
 
 
-def parse_comments(soup: BeautifulSoup) -> list[dict[str, str]]:
+def parse_comments(soup: BeautifulSoup) -> list[dict]:
     comments = []
     for content in soup.select("tr-editor-output-renderer .comment-content"):
-        value = clean_html(content)
-        if not value:
+        ordered_content = parse_ordered_content(content)
+        if not ordered_content["text"]:
             continue
         wrapper = content.find_parent(class_="comment")
         author = text_of(wrapper.select_one("a.author")) if wrapper else ""
-        comments.append({"author": author, "text": value})
+        comments.append({
+            "author": author,
+            "text": ordered_content["text"],
+            "images": ordered_content["images"],
+        })
     return comments
+
+
+def build_image_occurrences(data: dict) -> list[dict]:
+    occurrences = []
+
+    def append(scope: str, scope_index: int, images: list[dict]) -> None:
+        for image in images:
+            occurrences.append({
+                "occurrence_index": len(occurrences) + 1,
+                "scope": scope,
+                "scope_index": scope_index,
+                **image,
+            })
+
+    append("description", 1, data.get("description_images", []))
+    for comment_index, comment in enumerate(data.get("comments", []), 1):
+        append("comment", comment_index, comment.get("images", []))
+    return occurrences
 
 
 def parse_images(soup: BeautifulSoup) -> list[str]:
@@ -341,7 +381,12 @@ def parse_todo(soup: BeautifulSoup, url: str) -> dict:
     due = soup.select_one("tr-detail-date-time input[type=hidden]")
     data["due_date"] = due.get("value", "") if due else ""
     description = soup.select_one(".desc-content")
-    data["description"] = clean_html(description) if description else ""
+    ordered_description = (
+        parse_ordered_content(description)
+        if description else {"text": "", "images": []}
+    )
+    data["description"] = ordered_description["text"]
+    data["description_images"] = ordered_description["images"]
     data["parents"] = [
         {"title": text_of(item), "url": urljoin(TOWER_BASE, item.get("href", ""))}
         for item in soup.select(".breadcrumb-link")
@@ -354,6 +399,7 @@ def parse_todo(soup: BeautifulSoup, url: str) -> dict:
                 "title": title,
                 "url": urljoin(TOWER_BASE, row.get("detail-url", "")),
             })
+    data["image_occurrences"] = build_image_occurrences(data)
     return data
 
 
@@ -375,6 +421,7 @@ async def load_todo_data(url: str) -> dict:
         for image_url in parse_images(fragment_soup):
             if image_url not in data["image_urls"]:
                 data["image_urls"].append(image_url)
+    data["image_occurrences"] = build_image_occurrences(data)
     data["stream_count"] = len(fragments)
     return data
 
@@ -407,6 +454,14 @@ def format_todo(data: dict) -> str:
         prefix = f"{comment['author']}: " if comment["author"] else ""
         lines.append(prefix + comment["text"])
     lines.extend(["", f"> 已读取全部延迟加载记录（{data['stream_count']} 个区间）。"])
+    lines.extend(["", f"## 图片出现位置 ({len(data['image_occurrences'])})"])
+    for item in data["image_occurrences"]:
+        scope = "正文" if item["scope"] == "description" else f"评论 {item['scope_index']}"
+        lines.append(
+            f"- occurrence {item['occurrence_index']}: {scope} / "
+            f"图片位置 {item['position']} / 说明 {item['alt'] or '未提供'} / "
+            f"来源 {item['source_url']}"
+        )
     lines.extend(["", f"## 附件图片 ({len(data['image_urls'])})"])
     lines.extend(f"- 图片 {index}: {value}" for index, value in enumerate(data["image_urls"], 1))
     return "\n".join(lines)
@@ -493,16 +548,32 @@ async def tower_download_images(url: str, output_dir: str) -> dict | str:
     failures = []
     hashes: dict[str, dict] = {}
     saved_names: set[str] = set()
+    source_results: dict[str, dict] = {}
+
+    def record_failure(
+        source_index: int,
+        source_url: str,
+        status: str,
+        error: str,
+    ) -> None:
+        failures.append({
+            "source_index": source_index,
+            "source_url": source_url,
+            "status": status,
+            "error": error,
+        })
+        source_results[source_url] = {"status": status, "error": error}
+
     for source_index, image_url in enumerate(data["image_urls"], 1):
         try:
             response = await request(image_url)
             if is_login_page(response):
-                failures.append({
-                    "source_index": source_index,
-                    "source_url": image_url,
-                    "status": "auth_expired",
-                    "error": "Tower Cookie 已过期",
-                })
+                record_failure(
+                    source_index,
+                    image_url,
+                    "auth_expired",
+                    "Tower Cookie 已过期",
+                )
                 continue
             content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
             extension = IMAGE_EXTENSIONS.get(content_type)
@@ -510,13 +581,23 @@ async def tower_download_images(url: str, output_dir: str) -> dict | str:
                 raise ValueError(f"不支持的图片类型: {content_type or '未知类型'}")
             content_hash = hashlib.sha256(response.content).hexdigest()
             if content_hash in hashes:
-                downloaded.append({
+                original = hashes[content_hash]
+                item = {
                     "source_index": source_index,
                     "source_url": image_url,
+                    "file_name": original["file_name"],
+                    "path": original["path"],
+                    "content_type": content_type,
                     "duplicate": True,
-                    "duplicate_of": hashes[content_hash]["file_name"],
+                    "duplicate_of": original["file_name"],
                     "sha256": content_hash,
-                })
+                }
+                downloaded.append(item)
+                source_results[image_url] = {
+                    "status": "success",
+                    "file_name": item["file_name"],
+                    "path": item["path"],
+                }
                 continue
             file_name = f"tower-{len(hashes) + 1:03d}{extension}"
             file_path = target_dir / file_name
@@ -534,28 +615,23 @@ async def tower_download_images(url: str, output_dir: str) -> dict | str:
             hashes[content_hash] = item
             saved_names.add(file_name)
             downloaded.append(item)
+            source_results[image_url] = {
+                "status": "success",
+                "file_name": file_name,
+                "path": str(file_path),
+            }
         except httpx.HTTPStatusError as error:
             status = "auth_expired" if error.response.status_code == 401 else "forbidden" if error.response.status_code == 403 else "api_error"
-            failures.append({
-                "source_index": source_index,
-                "source_url": image_url,
-                "status": status,
-                "error": f"Tower 返回 HTTP {error.response.status_code}",
-            })
+            record_failure(
+                source_index,
+                image_url,
+                status,
+                f"Tower 返回 HTTP {error.response.status_code}",
+            )
         except httpx.HTTPError as error:
-            failures.append({
-                "source_index": source_index,
-                "source_url": image_url,
-                "status": "network_error",
-                "error": str(error),
-            })
+            record_failure(source_index, image_url, "network_error", str(error))
         except Exception as error:
-            failures.append({
-                "source_index": source_index,
-                "source_url": image_url,
-                "status": "download_error",
-                "error": str(error),
-            })
+            record_failure(source_index, image_url, "download_error", str(error))
 
     if not failures:
         owned_pattern = re.compile(r"tower-\d{3}\.(gif|jpe?g|png|svg|webp)$", re.I)
@@ -567,6 +643,16 @@ async def tower_download_images(url: str, output_dir: str) -> dict | str:
         failure_statuses = {item["status"] for item in failures}
         if len(failure_statuses) == 1:
             status = failure_statuses.pop()
+    occurrences = []
+    for occurrence in data.get("image_occurrences", []):
+        occurrence_result = {
+            **occurrence,
+            **source_results.get(occurrence["source_url"], {
+                "status": "not_downloaded",
+                "error": "未找到对应的附件下载结果",
+            }),
+        }
+        occurrences.append(occurrence_result)
     return {
         "status": status,
         "platform": "tower",
@@ -577,6 +663,7 @@ async def tower_download_images(url: str, output_dir: str) -> dict | str:
         "saved_count": len(hashes),
         "output_dir": str(target_dir),
         "images": downloaded,
+        "occurrences": occurrences,
         "failures": failures,
         "stale_files_removed": not failures,
     }

@@ -51,15 +51,14 @@ Tower 和蓝湖的 Cookie 获取方式：
 #### Codex
 
 ```bash
-codex plugin marketplace add yangfanfengshun/SpecWeaver \
-  --ref v0.4.2
+codex plugin marketplace add yangfanfengshun/SpecWeaver
 codex plugin add specweaver --marketplace specweaver
 ```
 
 #### Claude Code
 
 ```bash
-claude plugin marketplace add yangfanfengshun/SpecWeaver@v0.4.2
+claude plugin marketplace add yangfanfengshun/SpecWeaver
 claude plugin install specweaver
 ```
 
@@ -71,9 +70,9 @@ claude plugin install specweaver
 /add-plugin https://github.com/yangfanfengshun/SpecWeaver
 ```
 
-然后从导入的 marketplace 中安装 `specweaver`，并在插件详情确认版本为 `0.4.2`。
+然后从导入的 marketplace 中安装 `specweaver`。
 
-发布版本应使用对应 tag 或固定 ref，避免安装内容随开发分支漂移。完成这一步只代表插件已安装，认证信息尚未配置。
+完成这一步只代表插件已安装，认证信息尚未配置。
 
 ### 3. 加载插件并启动配置向导
 
