@@ -92,6 +92,7 @@ async def request(url: str) -> httpx.Response:
             "tower.im",
             "www.tower.im",
             "attachments.tower.im",
+            "tower3-downloads.tower.im",
         }:
             raise ValueError("Tower 请求或重定向目标不是受信任的 HTTPS 域名")
         response = await client.get(
