@@ -13,10 +13,10 @@ SpecWeaver 通过内置 Skills 和 MCP 读取 Tower、Eolink 与可选的蓝湖�
 
 安装插件和配置数据源认证是两个独立阶段：
 
-1. 从公开 GitHub 仓库安装插件；
-2. 重新加载 Cursor 并新建 Agent 对话；
-3. 从插件根目录安装 `specweaver` 终端命令；
-4. 在终端补齐认证配置；
+1. 通过统一安装器准备公共 runtime、`specweaver` 终端命令和认证配置；
+2. 从公开 GitHub 仓库导入并安装 Cursor 插件；
+3. 重新加载 Cursor 并新建 Agent 对话；
+4. 只在手动分平台安装时，从插件根目录补装 `specweaver` 终端命令；
 5. 使用用户有权访问的真实任务验证能力。
 
 仅导入仓库或下载插件文件，不代表插件已经可以读取数据源。
@@ -26,20 +26,28 @@ SpecWeaver 通过内置 Skills 和 MCP 读取 Tower、Eolink 与可选的蓝湖�
 先确认：
 
 ```bash
+git --version
 uv --version
 ```
 
 - Cursor 能使用 `/add-plugin` 或 Customize 插件界面；
 - macOS 和 Linux 直接支持，Windows 建议使用 WSL；
 - 当前环境可以访问 GitHub 和用户启用的数据源；
-- 用户不需要执行 `git clone`，也不需要访问 SpecWeaver 的私有开发仓库。
+- 统一安装器会自行管理 `~/.specweaver/runtime`，用户不需要访问 SpecWeaver 的
+  私有开发仓库。
 
 如果 `/add-plugin` 不可用，先让用户更新 Cursor。不要编造
 `cursor-agent plugin install` 命令；Cursor 当前没有独立的非交互式 CLI 安装命令。
 
 ## 首次安装
 
-在新的 Cursor Agent 对话中执行：
+先在普通终端安装公共 runtime、终端命令并完成一次认证配置：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh | bash -s -- --cursor
+```
+
+安装器不会绕过 Cursor 的插件确认。随后在新的 Cursor Agent 对话中执行：
 
 ```text
 /add-plugin https://github.com/yangfanfengshun/SpecWeaver
@@ -62,7 +70,8 @@ uv --version
 
 ## 安装终端入口与首次配置
 
-如果终端还没有 `specweaver` 命令，在新对话中发送：
+推荐安装命令已经创建 `specweaver` 命令并启动配置。如果使用原有 Cursor
+分平台安装方式，且终端还没有该命令，再在新对话中发送：
 
 ```text
 安装 SpecWeaver 终端命令
@@ -105,9 +114,19 @@ specweaver configure lanhu
 
 ## 更新已有安装
 
-在 Cursor 的 Customize 或 Plugins 界面刷新导入的 marketplace，并对
-`specweaver` 执行 Update 或 Reinstall。随后执行 `Developer: Reload Window` 并
-新建 Agent 对话，再通过 `configure-specweaver` Skill 重新执行
+先在普通终端执行：
+
+```bash
+specweaver update --cursor
+specweaver status
+```
+
+统一命令会更新公共 runtime，并提示用户在 Cursor 的 Customize 或 Plugins 界面
+刷新导入的 marketplace，对 `specweaver` 执行 Update 或 Reinstall。随后执行
+`Developer: Reload Window` 并新建 Agent 对话。更新不覆盖
+`~/.specweaver/.env`。
+
+如果没有使用统一安装入口，继续通过 `configure-specweaver` Skill 重新执行
 `scripts/setup.sh --install-cli`，让终端入口指向当前插件版本。
 
 更新后核对插件详情显示的版本。不要编辑 `~/.cursor/plugins/cache` 下的文件来

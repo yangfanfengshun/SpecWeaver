@@ -33,27 +33,44 @@ MCP 返回结果当作已经确认的需求结论。
 
 ### 1. 安装前检查
 
-先确认 Codex 和 `uv` 可用：
+先确认 Git、Codex 和 `uv` 可用：
 
 ```bash
+git --version
 codex --version
 uv --version
 ```
 
 插件支持 macOS 和 Linux；Windows 建议在 WSL 中使用。安装源是公开 GitHub 仓库，
-不需要执行 `git clone`，也不需要访问 SpecWeaver 的开发仓库。
+统一安装器会自行管理 `~/.specweaver/runtime`，不需要访问 SpecWeaver 的开发仓库。
 
 若 `uv` 不存在，先引导用户按官方方式安装并重新打开终端。不要通过修改插件缓存、
 伪造可执行文件或跳过 MCP 依赖来绕过检查。
 
 ### 2. 首次安装并配置
 
-在终端执行：
+Codex 用户推荐在普通终端执行一条命令：
 
 ```bash
-codex plugin marketplace add yangfanfengshun/SpecWeaver
-codex plugin add specweaver@specweaver
-~/.codex/plugins/cache/specweaver/specweaver/0.4.5/scripts/setup.sh --configure
+curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh | bash -s -- --codex
+```
+
+该命令安装或复用 Codex 中的 `specweaver@specweaver`，将公共终端入口指向
+`~/.specweaver/runtime`，并立即补齐缺失配置。Cookie 和密码通过终端隐藏输入，
+不能发送到 Codex 对话。配置保存在 `~/.specweaver/.env`。
+
+用户明确要求同时安装本机已存在的多个 AI 宿主时，省略 `--codex`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh | bash
+```
+
+现有手动安装方式继续作为单平台安装和故障恢复入口，下面的代码块可以整段复制：
+
+```bash
+codex plugin marketplace add yangfanfengshun/SpecWeaver && \
+codex plugin add specweaver@specweaver && \
+~/.codex/plugins/cache/specweaver/specweaver/0.5.0/scripts/setup.sh --configure
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
@@ -67,9 +84,6 @@ codex plugin add specweaver@specweaver
 首次配置只询问缺失项。蓝湖只收集是否启用和 Cookie，不要求项目链接；没有真实
 项目链接时标记为“已配置，待首次使用验证”，第一次读取真实设计稿时再验证 Cookie
 和项目权限。
-
-Cookie 和密码只能输入终端中的隐藏输入，不能发送到 Codex 对话。配置保存在
-`~/.specweaver/.env`。
 
 若当前 Codex 客户端提供插件目录或专用插件管理工具，优先使用该界面或工具完成
 同一安装动作；不要为了绕过宿主权限策略而强制改用终端。
@@ -96,7 +110,17 @@ codex plugin list --marketplace specweaver
 ### 更新已有安装
 
 首次安装闭环完成后，只有用户明确要求升级或排查版本时才进入本节。先刷新
-marketplace，再重新安装当前插件版本：
+runtime、marketplace 和插件：
+
+```bash
+specweaver update --codex
+specweaver status
+```
+
+`specweaver update` 不覆盖 `~/.specweaver/.env`，runtime 存在本地修改时停止，
+不会强行覆盖。更新完成后新建 Codex Agent 任务。
+
+没有使用统一安装入口时，继续使用原生命令：
 
 ```bash
 codex plugin marketplace upgrade specweaver

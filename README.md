@@ -19,6 +19,7 @@
 ## 运行要求
 
 - macOS 或 Linux；Windows 建议使用 WSL；
+- Git；
 - Python 3.10～3.13；
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)；
 - Codex、Claude Code 或 Cursor 之一；
@@ -28,13 +29,12 @@ MCP 依赖由 `uv` 根据入口脚本声明准备，插件目录不维护 `.venv
 
 ## 安装与首次配置
 
-首次使用需要完成“安装插件、终端配置、重新加载、首次使用验证”。安装和配置可以
-连续在终端完成，不需要回到 Agent 对话发送 Cookie，也不需要为了安装准备 Tower
-任务或蓝湖项目链接。
+首次使用需要完成“安装、终端配置、重新加载、首次使用验证”。多个 AI 宿主共用
+同一份 runtime、终端命令和认证配置，不需要分别填写 Tower、Eolink 或蓝湖信息。
 
 ### 1. 安装前准备
 
-- 确认本机满足上面的运行要求，并且终端可以执行 `uv --version`；
+- 确认终端可以执行 `git --version` 和 `uv --version`；
 - 确认可以访问 GitHub；插件从公开发布仓库安装，不需要私有开发仓库权限；
 - 在浏览器中登录需要使用的 Tower 和蓝湖账号；
 - 准备 Eolink 根地址、登录账号和密码。
@@ -47,71 +47,60 @@ Tower 和蓝湖的 Cookie 获取方式：
 4. 从 Request Headers 中复制完整的 Cookie；
 5. Cookie 只粘贴到后续的终端配置向导，不要发送到 Agent 对话中。
 
-### 2. 安装插件
+### 2. 推荐：一条命令安装
 
-三个平台都直接从 GitHub 安装，用户无需执行 `git clone`。选择自己使用的平台完成安装即可。
-
-#### Codex
+在普通终端执行：
 
 ```bash
-codex plugin marketplace add yangfanfengshun/SpecWeaver
-codex plugin add specweaver@specweaver
-~/.codex/plugins/cache/specweaver/specweaver/0.4.5/scripts/setup.sh --configure
+curl -fsSL \
+  https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh |
+  bash
 ```
 
-前两条命令安装插件；第三条从当前版本缓存启动首次配置，并安装后续使用的
-`specweaver` 终端命令。终端命令默认安装到 `~/.local/bin`；如果该目录不在
-`PATH` 中，安装脚本会明确提示。
+安装器会把公开发布仓库克隆到 `~/.specweaver/runtime`，检测本机的 Codex、
+Claude Code 和 Cursor，复用已存在的安装，并只运行一次认证配置。它不会创建
+第二套 Codex 或 Claude Code 插件，也不会修改插件缓存中的源码。
 
-该缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
-位置调整命令，或者回到 Codex App 发送“配置 SpecWeaver”，由 AI 完成定位和配置。
-
-Codex 的安装前检查、更新、重新安装、新任务加载、首次配置和故障处理规则见
-[`AGENTS.md`](./AGENTS.md)。
-
-#### Claude Code
+只处理指定宿主时，将参数传给安装器：
 
 ```bash
-claude plugin marketplace add yangfanfengshun/SpecWeaver
-claude plugin install specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.4.5/scripts/setup.sh --configure
+curl -fsSL \
+  https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh |
+  bash -s -- --codex
 ```
 
-第三条命令从当前版本缓存启动首次配置，并安装后续使用的 `specweaver` 终端命令。
-该缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
-位置调整命令，或者回到 Claude Code 对话发送“配置 SpecWeaver”，由 AI 完成定位
-和配置。
+可将 `--codex` 替换成 `--claude` 或 `--cursor`。多个参数可以同时使用。默认
+安装入口位于 `~/.local/bin/specweaver`；如果该目录不在 `PATH` 中，安装器会
+明确提示。
 
-Claude Code 的安装前检查、更新、重载、首次配置和故障处理规则见
-[`CLAUDE.md`](./CLAUDE.md)。
-
-#### Cursor
-
-在 Cursor Agent 中运行：
+Cursor 当前没有经过验证的非交互式插件安装命令。检测到 Cursor 或显式指定
+`--cursor` 时，安装器会完成公共终端入口与认证配置，再提示在 Cursor Agent 中执行：
 
 ```text
 /add-plugin https://github.com/yangfanfengshun/SpecWeaver
 ```
 
-然后从导入的 marketplace 中安装 `specweaver`。
+随后在插件面板完成安装。安装器不会绕过 Cursor 的确认或组织策略。
 
-Cursor Agent 会按需加载插件内的
-[`rules/specweaver.mdc`](./rules/specweaver.mdc)，其中包含安装前检查、加载、更新、
-首次配置、验证和故障处理规则。
+如果不希望直接执行网络脚本，可以先下载并检查：
 
-Cursor 已经存在 `specweaver` 命令时，可以直接在终端运行 `specweaver configure`。
-首次尚未安装该命令时，重新加载插件后让 `configure-specweaver` Skill 从插件根目录
-执行一次 `scripts/setup.sh --install-cli`；以后更新认证不再需要回到 Agent 对话。
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh \
+  -o specweaver-install.sh
+less specweaver-install.sh
+bash specweaver-install.sh
+```
 
-### 3. 终端配置
+确认完成后可以删除下载的脚本。
 
-首次配置：
+### 3. 首次配置
+
+推荐安装命令已经自动启动配置向导。主动跳过或非交互环境安装后，可以补充运行：
 
 ```bash
 specweaver configure
 ```
-
-如果刚才使用 Codex 完整安装命令，配置向导已经执行，无需重复运行。
 
 首次配置只询问缺失项：
 
@@ -154,6 +143,78 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```
 
 插件能够读取任务并给出后续选项，说明安装、配置和 MCP 加载均已完成。
+
+### 手动分平台安装
+
+现有安装方式继续保留，适合只使用一个平台或排查统一安装器。
+
+#### Codex
+
+下面的代码块可以整段复制到终端；只有前一步成功才会继续：
+
+```bash
+codex plugin marketplace add yangfanfengshun/SpecWeaver && \
+codex plugin add specweaver@specweaver && \
+~/.codex/plugins/cache/specweaver/specweaver/0.5.0/scripts/setup.sh --configure
+```
+
+Codex 的更新、重新安装、新任务加载和故障处理规则见
+[`AGENTS.md`](./AGENTS.md)。
+
+#### Claude Code
+
+```bash
+claude plugin marketplace add yangfanfengshun/SpecWeaver && \
+claude plugin install specweaver@specweaver && \
+~/.claude/plugins/cache/specweaver/specweaver/0.5.0/scripts/setup.sh --configure
+```
+
+Claude Code 的更新、重载和故障处理规则见 [`CLAUDE.md`](./CLAUDE.md)。
+
+#### Cursor
+
+在 Cursor Agent 中执行：
+
+```text
+/add-plugin https://github.com/yangfanfengshun/SpecWeaver
+```
+
+然后从导入的 marketplace 中安装 `specweaver`。详细规则见
+[`rules/specweaver.mdc`](./rules/specweaver.mdc)。
+
+以上固定缓存路径已在 macOS 验证。Windows 路径尚未验证；Windows 建议使用 WSL，
+或回到对应客户端让 AI 定位插件并启动配置。
+
+### 安装状态与更新
+
+查看 runtime、终端入口、配置完整性和宿主版本：
+
+```bash
+specweaver status
+```
+
+统一更新 runtime 和已安装的 Codex、Claude Code 插件：
+
+```bash
+specweaver update
+```
+
+该命令只适用于通过推荐入口创建的 `~/.specweaver/runtime`。只使用过手动分平台安装
+时，先运行推荐安装命令接管，或者继续使用对应宿主的原生更新命令。
+
+Cursor 会收到 Update 或 Reinstall 提示，仍由用户在原生插件界面确认。更新不会
+覆盖 `~/.specweaver/.env`；runtime 存在本地修改时会停止，不自动覆盖。
+
+只更新指定宿主：
+
+```bash
+specweaver update --codex
+specweaver update --claude
+specweaver update --cursor
+```
+
+卸载继续使用 Codex、Claude Code 或 Cursor 自身的插件管理器。首版不提供统一卸载，
+避免在无法可靠确认 Cursor 状态时误删多个宿主共用的认证配置。
 
 ### 重新配置、更新认证或检查连接
 
@@ -326,6 +387,7 @@ SpecWeaver/
 ├── README.md
 ├── AGENTS.md
 ├── CLAUDE.md
+├── install.sh
 ├── .agents/plugins/marketplace.json
 ├── .codex-plugin/plugin.json
 ├── .claude-plugin/

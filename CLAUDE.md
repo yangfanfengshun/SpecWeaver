@@ -21,27 +21,38 @@ SpecWeaver 负责：
 
 ### 1. 安装前检查
 
-先确认 Claude Code 和 `uv` 可用：
+先确认 Git、Claude Code 和 `uv` 可用：
 
 ```bash
+git --version
 claude --version
 uv --version
 ```
 
 插件支持 macOS 和 Linux；Windows 建议在 WSL 中使用。安装源是公开 GitHub 仓库，
-不需要克隆源码，也不需要访问 SpecWeaver 的开发仓库。
+统一安装器会自行管理 `~/.specweaver/runtime`，不需要访问 SpecWeaver 的开发仓库。
 
 若 `uv` 不存在，先引导用户按官方方式安装并重新打开终端。不要通过修改插件缓存、
 伪造可执行文件或跳过 MCP 依赖来绕过检查。
 
 ### 2. 首次安装并配置
 
-在终端执行：
+Claude Code 用户推荐在普通终端执行一条命令：
 
 ```bash
-claude plugin marketplace add yangfanfengshun/SpecWeaver
-claude plugin install specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.4.5/scripts/setup.sh --configure
+curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh | bash -s -- --claude
+```
+
+该命令安装或复用 Claude Code 中的 `specweaver@specweaver`，将公共终端入口指向
+`~/.specweaver/runtime`，并立即补齐缺失配置。用户明确要求同时安装本机已存在的
+多个 AI 宿主时，省略 `--claude`。
+
+现有手动安装方式继续作为单平台安装和故障恢复入口，下面的代码块可以整段复制：
+
+```bash
+claude plugin marketplace add yangfanfengshun/SpecWeaver && \
+claude plugin install specweaver@specweaver && \
+~/.claude/plugins/cache/specweaver/specweaver/0.5.0/scripts/setup.sh --configure
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -85,12 +96,22 @@ claude plugin list
 ### 更新已有安装
 
 首次安装闭环完成后，只有用户明确要求升级或排查版本时才进入本节。先刷新
-marketplace，再更新插件：
+runtime、marketplace 和插件：
+
+```bash
+specweaver update --claude
+specweaver status
+```
+
+`specweaver update` 不覆盖 `~/.specweaver/.env`，runtime 存在本地修改时停止，
+不会强行覆盖。更新后执行 `/reload-plugins`；若当前版本不支持，再新建会话或重启。
+
+没有使用统一安装入口时，继续使用原生命令：
 
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.4.5/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.5.0/scripts/setup.sh --configure
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能
