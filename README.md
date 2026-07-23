@@ -4,7 +4,8 @@
 
 > Weave scattered context into actionable specs.
 
-仓库根目录就是 SpecWeaver 插件本体。平台安装后直接从自身缓存运行，不会再次从 GitHub 下载一份 MCP 源码。
+本仓库根目录就是可安装的 SpecWeaver 插件。平台安装后直接从自身缓存运行，
+不会在执行期间再次从 GitHub 下载 MCP 源码。
 
 ## 能力
 
@@ -27,7 +28,9 @@ MCP 依赖由 `uv` 根据入口脚本声明准备，插件目录不维护 `.venv
 
 ## 安装与首次配置
 
-首次使用需要依次完成“安装插件、加载插件、配置认证、验证连接”四个步骤。只执行安装命令不会弹出 Cookie 输入框，也不能直接读取 Tower、Eolink 或蓝湖。
+首次使用需要完成“安装插件、终端配置、重新加载、首次使用验证”。安装和配置可以
+连续在终端完成，不需要回到 Agent 对话发送 Cookie，也不需要为了安装准备 Tower
+任务或蓝湖项目链接。
 
 ### 1. 安装前准备
 
@@ -52,15 +55,35 @@ Tower 和蓝湖的 Cookie 获取方式：
 
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver
-codex plugin add specweaver --marketplace specweaver
+codex plugin add specweaver@specweaver
+~/.codex/plugins/cache/specweaver/specweaver/0.4.5/scripts/setup.sh --configure
 ```
+
+前两条命令安装插件；第三条从当前版本缓存启动首次配置，并安装后续使用的
+`specweaver` 终端命令。终端命令默认安装到 `~/.local/bin`；如果该目录不在
+`PATH` 中，安装脚本会明确提示。
+
+该缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
+位置调整命令，或者回到 Codex App 发送“配置 SpecWeaver”，由 AI 完成定位和配置。
+
+Codex 的安装前检查、更新、重新安装、新任务加载、首次配置和故障处理规则见
+[`AGENTS.md`](./AGENTS.md)。
 
 #### Claude Code
 
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver
-claude plugin install specweaver
+claude plugin install specweaver@specweaver
+~/.claude/plugins/cache/specweaver/specweaver/0.4.5/scripts/setup.sh --configure
 ```
+
+第三条命令从当前版本缓存启动首次配置，并安装后续使用的 `specweaver` 终端命令。
+该缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
+位置调整命令，或者回到 Claude Code 对话发送“配置 SpecWeaver”，由 AI 完成定位
+和配置。
+
+Claude Code 的安装前检查、更新、重载、首次配置和故障处理规则见
+[`CLAUDE.md`](./CLAUDE.md)。
 
 #### Cursor
 
@@ -72,34 +95,37 @@ claude plugin install specweaver
 
 然后从导入的 marketplace 中安装 `specweaver`。
 
-完成这一步只代表插件已安装，认证信息尚未配置。
+Cursor Agent 会按需加载插件内的
+[`rules/specweaver.mdc`](./rules/specweaver.mdc)，其中包含安装前检查、加载、更新、
+首次配置、验证和故障处理规则。
 
-### 3. 加载插件并启动配置向导
+Cursor 已经存在 `specweaver` 命令时，可以直接在终端运行 `specweaver configure`。
+首次尚未安装该命令时，重新加载插件后让 `configure-specweaver` Skill 从插件根目录
+执行一次 `scripts/setup.sh --install-cli`；以后更新认证不再需要回到 Agent 对话。
 
-安装完成后，让客户端重新加载插件：
+### 3. 终端配置
 
-- Codex：新建一个 Agent 任务；
-- Claude Code：新建会话；如果仍未识别插件，重启 Claude Code；
-- Cursor：执行 `Developer: Reload Window`，然后新建一个 Agent 任务。
+首次配置：
 
-在新任务或新会话中直接说：
-
-```text
-配置 SpecWeaver
+```bash
+specweaver configure
 ```
 
-`configure-specweaver` Skill 会从平台缓存中定位插件，并在终端运行交互式配置向导。如果客户端询问是否允许执行终端命令，需要确认允许。
+如果刚才使用 Codex 完整安装命令，配置向导已经执行，无需重复运行。
 
-### 4. 填写认证信息
-
-按照终端提示依次填写：
+首次配置只询问缺失项：
 
 1. Tower Cookie；
 2. Eolink 根地址、账号和密码；
 3. 是否启用蓝湖设计稿能力；
-4. 启用蓝湖时，填写蓝湖 Cookie 和一个有权访问的标准 stage 项目链接。项目链接只用于验证，不会保存。
+4. 启用蓝湖时填写蓝湖 Cookie。
 
-Cookie 和密码采用隐藏输入，不会显示在终端中。向导会立即联网验证 Tower、Eolink 和蓝湖的认证状态；验证失败时，可以根据提示重新填写。
+安装和配置不要求蓝湖项目链接。由于蓝湖可靠的权限检查依赖具体项目，Cookie 保存
+后会显示“已配置，待首次使用验证”；第一次读取真实设计稿时，再同时检查 Cookie
+和该项目的访问权限。
+
+Cookie 和密码采用隐藏输入，不会显示在终端中。Tower 与 Eolink 会立即执行连接
+验证；验证失败时只重新填写失败的平台。
 
 配置保存到：
 
@@ -107,9 +133,17 @@ Cookie 和密码采用隐藏输入，不会显示在终端中。向导会立即�
 ~/.specweaver/.env
 ```
 
-配置文件使用原子替换写入并设置为 `600` 权限。不要把该文件加入 Git，也不要在 Agent 对话中粘贴 Cookie、密码或文件内容。
+配置文件使用原子替换写入并设置为 `600` 权限。不要把该文件加入 Git，也不要在
+Agent 对话中粘贴 Cookie、密码或文件内容。
 
-当终端显示所有已启用的数据源验证成功后，首次配置完成，可以开始使用 SpecWeaver。
+### 4. 加载插件
+
+安装和配置完成后，让客户端重新加载插件：
+
+- Codex：新建一个 Agent 任务；
+- Claude Code：在交互会话中执行 `/reload-plugins`；如果当前版本不支持该命令，
+  再新建会话或重启 Claude Code；
+- Cursor：执行 `Developer: Reload Window`，然后新建一个 Agent 任务。
 
 ### 5. 验证安装结果
 
@@ -121,27 +155,33 @@ Cookie 和密码采用隐藏输入，不会显示在终端中。向导会立即�
 
 插件能够读取任务并给出后续选项，说明安装、配置和 MCP 加载均已完成。
 
-### 重新配置或更新认证
+### 重新配置、更新认证或检查连接
 
-Cookie、密码失效或需要切换账号时，在新的 Agent 任务中再次说：
-
-```text
-配置 SpecWeaver
-```
-
-向导会保留已有值，用户可以只更新需要变化的认证信息。更新并验证成功后，从原流程的失败节点重试即可。
-
-如果已经知道平台缓存中的插件目录，也可以直接在该目录执行：
+某个平台认证失效时，只更新该平台，不重新询问其他配置：
 
 ```bash
-./scripts/setup.sh --configure
+specweaver configure tower
+specweaver configure eolink
+specweaver configure lanhu
 ```
+
+检查全部或单个平台的状态：
+
+```bash
+specweaver check
+specweaver check tower
+```
+
+`specweaver configure` 不带平台名时只补齐缺失项；已有配置会原样保留。更新成功后
+从原流程的失败节点重试即可。
 
 如需更换配置目录，请在启动客户端前设置 `SPECWEAVER_HOME`。
 
 ### 自动化环境
 
-自动化环境可预先设置下列变量后，在已安装插件目录运行 `./scripts/setup.sh --non-interactive`：
+自动化环境可预先设置下列变量后运行
+`specweaver configure --non-interactive`。追加平台名时只要求该平台的变量，例如
+`specweaver configure tower --non-interactive`：
 
 | 变量 | 必需条件 | 用途 |
 | --- | --- | --- |
@@ -151,11 +191,13 @@ Cookie、密码失效或需要切换账号时，在新的 Agent 任务中再次�
 | `EOLINK_PASSWORD` | 始终 | Eolink 登录密码 |
 | `LANHU_ENABLED` | 始终 | 只接受 `true` 或 `false` |
 | `LANHU_COOKIE` | 蓝湖启用时 | 读取设计稿与原图 |
-| `LANHU_CHECK_URL` | 非交互且蓝湖启用时 | 用标准 stage 项目验证权限，不写入配置 |
+| `LANHU_CHECK_URL` | 可选 | 提前检查指定蓝湖项目权限，不写入配置 |
 
 旧配置缺少 `LANHU_ENABLED` 时按 `true` 处理。设置为 `false` 后，需求流程不会询问、读取或下载蓝湖资料。
 
 ## 使用
+
+### 收集 Tower 需求
 
 ```text
 整理这个 Tower 任务：https://tower.im/teams/<team-id>/todos/<todo-id>
@@ -174,9 +216,30 @@ Cookie、密码失效或需要切换账号时，在新的 Agent 任务中再次�
 
 Git Skill 不会自动推送、创建 PR、合并或发布。Tower 评论始终先 dry-run，只有用户明确确认后才发布。
 
+### 配置或恢复数据源
+
+也可以让 Agent 调用同一套受控配置命令：
+
+```text
+配置 SpecWeaver
+```
+
+```text
+更新 SpecWeaver 的 Tower Cookie
+```
+
+```text
+检查 SpecWeaver 数据源连接
+```
+
+Agent 会调用插件自带的配置脚本。认证值只应输入终端中的隐藏输入框，不应
+粘贴到聊天窗口。
+
 ## 认证失效
 
-当 Tower、Eolink 或蓝湖认证失效时，插件会暂停依赖该平台的步骤并提示受影响范围。重新说“配置 SpecWeaver”，更新认证并验证成功后，从失败节点重试即可，不需要重跑整个流程。
+当 Tower、Eolink 或蓝湖认证失效时，插件会暂停依赖该平台的步骤并提示对应的
+`specweaver configure <platform>` 命令。只更新失效平台并从失败节点重试，不需要
+重跑安装或重填其他平台。
 
 - Tower 失效：暂停整个流程；
 - 蓝湖失效：更新后重试，或明确确认本次不采用设计稿；
@@ -190,3 +253,95 @@ Git Skill 不会自动推送、创建 PR、合并或发布。Tower 评论始终�
 - 自定义目录变量：`SPECWEAVER_HOME`
 - MCP：`specweaver-tower`、`specweaver-eolink`、`specweaver-lanhu`
 
+## 工作方式
+
+SpecWeaver 由三个数据源 MCP 和三个工作流 Skill 组成：
+
+| 组件 | 作用 |
+| --- | --- |
+| Tower MCP | 读取任务分类、正文、评论、子任务和附件；经确认后发布去重评论 |
+| Eolink MCP | 验证登录状态并读取项目、接口列表和接口详情 |
+| 蓝湖 MCP | 验证 Cookie、读取标准 stage 项目的设计列表并下载原图 |
+| `configure-specweaver` | 补齐或按平台更新认证信息，并检查可直接验证的数据源 |
+| `tower-requirement-collection` | 执行 Bug 快速分析或普通需求资料收集 |
+| `git-commit` | 审查改动、验证并生成受控提交，按确认同步 Tower |
+
+Skill 是 Agent 行为和流程约束的来源；MCP 只负责读取或执行明确的数据源操作。
+完整资料收集生成的文件写入当前开发项目，不写入插件安装目录。
+
+## Agent 上下文
+
+仓库还包含以下面向大模型的说明：
+
+- [`AGENTS.md`](./AGENTS.md)：适用于 Codex、Cursor 等通用 Agent；
+- [`CLAUDE.md`](./CLAUDE.md)：Claude Code 的插件上下文和运行约束。
+- [`rules/specweaver.mdc`](./rules/specweaver.mdc)：Cursor 原生的安装、更新、
+  配置与故障处理规则。
+
+这些文件用于帮助 Agent 正确理解插件边界，不能代替具体 Skill。命中 Skill
+时，Agent 仍应完整读取对应 `SKILL.md` 并遵循其中流程。
+
+## 安全边界
+
+- 不在对话、生成文档、提交、PR 或日志中输出 Cookie、密码、Token 和登录响应；
+- 不读取或展示 `~/.specweaver/.env` 的内容；
+- 不把认证信息写入项目级 `.env` 或插件安装目录；
+- 不在用户未确认时发布 Tower 评论；
+- 不因单个数据源不可用而伪造资料；应说明影响范围并让用户选择重试或明确降级；
+- 不直接修改公开插件仓库来修复问题；已发布版本通过更高版本替换。
+
+## 故障排查
+
+### 插件已经安装，但 Agent 找不到 Skill 或 MCP
+
+先按当前平台重新加载插件：
+
+- Codex：新建 Agent 任务；
+- Claude Code：新建会话，必要时重启；
+- Cursor：执行 `Developer: Reload Window` 后新建任务。
+
+仍未识别时，先更新 marketplace，再重新安装插件。不要手动修改平台缓存中的
+插件文件。
+
+### 配置成功后仍提示认证失效
+
+运行提示中的 `specweaver configure <platform>`，只更新失效的数据源。若使用了自定义
+`SPECWEAVER_HOME`，必须在启动客户端前设置，确保客户端和配置向导读取同一目录。
+
+### 找不到 `uv`
+
+在终端执行 `uv --version`。若命令不存在，按
+[`uv` 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/)
+安装后重启宿主客户端。
+
+### 蓝湖能力暂时不需要
+
+运行 `specweaver configure lanhu` 并选择关闭蓝湖。关闭后，需求流程不会询问、
+读取或下载蓝湖资料；Tower 和 Eolink 能力不受影响。
+
+## 插件目录
+
+```text
+SpecWeaver/
+├── README.md
+├── AGENTS.md
+├── CLAUDE.md
+├── .agents/plugins/marketplace.json
+├── .codex-plugin/plugin.json
+├── .claude-plugin/
+├── .cursor-plugin/
+├── .mcp.json
+├── .mcp.claude.json
+├── .mcp.cursor.json
+├── skills/
+├── rules/
+├── mcp/
+├── scripts/
+└── release-notes/
+```
+
+## 版本与支持
+
+版本说明见 [`release-notes/`](./release-notes/)。安装问题请在公开仓库提交
+Issue，并提供平台、插件版本、可公开的错误信息和复现步骤。不要附带 Cookie、
+密码、Token、私有任务内容或完整登录响应。

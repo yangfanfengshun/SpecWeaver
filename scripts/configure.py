@@ -29,6 +29,12 @@ CONFIG_KEYS = (
     "LANHU_COOKIE",
 )
 SECRET_KEYS = {"TOWER_COOKIE", "EOLINK_PASSWORD", "LANHU_COOKIE"}
+PLATFORMS = ("tower", "eolink", "lanhu")
+PLATFORM_LABELS = {
+    "tower": "Tower",
+    "eolink": "Eolink",
+    "lanhu": "蓝湖",
+}
 
 
 def config_file() -> Path:
@@ -77,18 +83,57 @@ def write_config_atomic(path: Path, values: dict[str, str]) -> None:
             temp_path.unlink()
 
 
-def merged_non_interactive(existing: dict[str, str]) -> dict[str, str]:
+def platform_is_complete(platform: str, values: dict[str, str]) -> bool:
+    if platform == "tower":
+        return bool(values["TOWER_COOKIE"].strip())
+    if platform == "eolink":
+        return all(
+            values[key].strip()
+            for key in ("EOLINK_BASE_URL", "EOLINK_USER", "EOLINK_PASSWORD")
+        )
+    if platform == "lanhu":
+        try:
+            enabled = parse_enabled(values["LANHU_ENABLED"])
+        except ValueError:
+            return False
+        return not enabled or bool(values["LANHU_COOKIE"].strip())
+    raise ValueError(f"未知平台: {platform}")
+
+
+def missing_platforms(values: dict[str, str]) -> list[str]:
+    return [
+        platform
+        for platform in PLATFORMS
+        if not platform_is_complete(platform, values)
+    ]
+
+
+def required_keys(platforms: list[str], values: dict[str, str]) -> list[str]:
+    required: list[str] = []
+    if "tower" in platforms:
+        required.append("TOWER_COOKIE")
+    if "eolink" in platforms:
+        required.extend(("EOLINK_BASE_URL", "EOLINK_USER", "EOLINK_PASSWORD"))
+    if "lanhu" in platforms:
+        required.append("LANHU_ENABLED")
+        if values["LANHU_ENABLED"] and parse_enabled(values["LANHU_ENABLED"]):
+            required.append("LANHU_COOKIE")
+    return required
+
+
+def merged_non_interactive(
+    existing: dict[str, str], platforms: list[str] | None = None
+) -> dict[str, str]:
     values = dict(existing)
     for key in CONFIG_KEYS:
         if key in os.environ:
             values[key] = os.environ[key]
     if not values["LANHU_ENABLED"]:
         values["LANHU_ENABLED"] = "true"
-    enabled = parse_enabled(values["LANHU_ENABLED"])
-    required = ["TOWER_COOKIE", "EOLINK_BASE_URL", "EOLINK_USER", "EOLINK_PASSWORD"]
-    if enabled:
-        required.append("LANHU_COOKIE")
-    missing = [key for key in required if not values[key].strip()]
+    targets = platforms or list(PLATFORMS)
+    missing = [
+        key for key in required_keys(targets, values) if not values[key].strip()
+    ]
     if missing:
         raise ValueError(f"非交互模式缺少必要配置: {', '.join(missing)}")
     return values
@@ -133,40 +178,62 @@ def prompt_enabled(current: str) -> str:
     return prompt_enabled(current)
 
 
-def collect_interactive(existing: dict[str, str]) -> tuple[dict[str, str], str]:
+def collect_interactive(
+    existing: dict[str, str],
+    platforms: list[str],
+    *,
+    only_missing: bool,
+) -> dict[str, str]:
     values = dict(existing)
-    print("\n配置 Tower")
-    print("用于读取任务、下载附件和按明确授权发布评论。")
-    values["TOWER_COOKIE"] = prompt_value(
-        "TOWER_COOKIE", "Tower Cookie", values["TOWER_COOKIE"], secret=True
-    )
+    if "tower" in platforms:
+        print("\n配置 Tower")
+        print("用于读取任务、下载附件和按明确授权发布评论。")
+        if not only_missing or not values["TOWER_COOKIE"]:
+            values["TOWER_COOKIE"] = prompt_value(
+                "TOWER_COOKIE", "Tower Cookie", values["TOWER_COOKIE"], secret=True
+            )
 
-    print("\n配置 Eolink")
-    print("用于读取项目、接口列表和接口详情。")
-    values["EOLINK_BASE_URL"] = prompt_value(
-        "EOLINK_BASE_URL", "Eolink 根地址", values["EOLINK_BASE_URL"]
-    ).rstrip("/")
-    values["EOLINK_USER"] = prompt_value(
-        "EOLINK_USER", "Eolink 账号", values["EOLINK_USER"]
-    )
-    values["EOLINK_PASSWORD"] = prompt_value(
-        "EOLINK_PASSWORD", "Eolink 密码", values["EOLINK_PASSWORD"], secret=True
-    )
+    if "eolink" in platforms:
+        print("\n配置 Eolink")
+        print("用于读取项目、接口列表和接口详情。")
+        if not only_missing or not values["EOLINK_BASE_URL"]:
+            values["EOLINK_BASE_URL"] = prompt_value(
+                "EOLINK_BASE_URL", "Eolink 根地址", values["EOLINK_BASE_URL"]
+            ).rstrip("/")
+        if not only_missing or not values["EOLINK_USER"]:
+            values["EOLINK_USER"] = prompt_value(
+                "EOLINK_USER", "Eolink 账号", values["EOLINK_USER"]
+            )
+        if not only_missing or not values["EOLINK_PASSWORD"]:
+            values["EOLINK_PASSWORD"] = prompt_value(
+                "EOLINK_PASSWORD",
+                "Eolink 密码",
+                values["EOLINK_PASSWORD"],
+                secret=True,
+            )
 
-    print("\n配置蓝湖")
-    values["LANHU_ENABLED"] = prompt_enabled(values["LANHU_ENABLED"] or "true")
-    lanhu_check_url = ""
-    if parse_enabled(values["LANHU_ENABLED"]):
-        values["LANHU_COOKIE"] = prompt_value(
-            "LANHU_COOKIE", "蓝湖 Cookie", values["LANHU_COOKIE"], secret=True
+    if "lanhu" in platforms:
+        print("\n配置蓝湖")
+        should_prompt_enabled = (
+            not only_missing
+            or not values["LANHU_ENABLED"]
+            or values["LANHU_ENABLED"].strip().lower() not in {"true", "false"}
         )
-        lanhu_check_url = input(
-            "用于验证的蓝湖 stage 项目链接（只验证，不保存）: "
-        ).strip()
-        while not lanhu_check_url:
-            print("启用蓝湖时需要项目链接完成真实认证验证。")
-            lanhu_check_url = input("蓝湖 stage 项目链接: ").strip()
-    return values, lanhu_check_url
+        if should_prompt_enabled:
+            current_enabled = values["LANHU_ENABLED"].strip().lower()
+            if current_enabled not in {"true", "false"}:
+                current_enabled = "true"
+            values["LANHU_ENABLED"] = prompt_enabled(current_enabled)
+        if parse_enabled(values["LANHU_ENABLED"]):
+            if not only_missing or not values["LANHU_COOKIE"]:
+                values["LANHU_COOKIE"] = prompt_value(
+                    "LANHU_COOKIE",
+                    "蓝湖 Cookie",
+                    values["LANHU_COOKIE"],
+                    secret=True,
+                )
+            print("蓝湖项目权限将在首次读取真实设计稿时验证，无需在安装时提供链接。")
+    return values
 
 
 def validate_tower(cookie: str) -> tuple[str, str]:
@@ -179,7 +246,11 @@ def validate_tower(cookie: str) -> tuple[str, str]:
         )
         response.raise_for_status()
         sample = response.text[:5000].lower()
-        if "/login" in response.url.path.lower() or "登录" in response.text[:5000] or "login" in sample:
+        if (
+            "/login" in response.url.path.lower()
+            or "登录" in response.text[:5000]
+            or "login" in sample
+        ):
             return "failed", "Tower Cookie 已失效"
         return "success", "Tower 认证有效"
     except httpx.HTTPError as error:
@@ -229,7 +300,11 @@ def parse_lanhu_check_url(url: str) -> tuple[str, str | None]:
     return project_id, team_id
 
 
-def validate_lanhu(cookie: str, project_url: str) -> tuple[str, str]:
+def validate_lanhu(cookie: str, project_url: str = "") -> tuple[str, str]:
+    if not cookie.strip():
+        return "failed", "未配置蓝湖 Cookie"
+    if not project_url:
+        return "configured", "蓝湖 Cookie 已配置；项目权限将在首次使用时验证"
     try:
         project_id, team_id = parse_lanhu_check_url(project_url)
         params = {
@@ -263,26 +338,45 @@ def validate_lanhu(cookie: str, project_url: str) -> tuple[str, str]:
         return "failed", f"蓝湖连接、链接或响应失败: {error}"
 
 
-def validate_all(values: dict[str, str], lanhu_check_url: str) -> dict[str, tuple[str, str]]:
-    results = {
-        "Tower": validate_tower(values["TOWER_COOKIE"]),
-        "Eolink": validate_eolink(
-            values["EOLINK_BASE_URL"], values["EOLINK_USER"], values["EOLINK_PASSWORD"]
-        ),
-    }
-    if parse_enabled(values["LANHU_ENABLED"]):
-        if not lanhu_check_url:
-            results["蓝湖"] = ("failed", "缺少 LANHU_CHECK_URL，无法验证认证和项目权限")
+def validate_platforms(
+    values: dict[str, str],
+    platforms: list[str],
+    lanhu_check_url: str = "",
+) -> dict[str, tuple[str, str]]:
+    results: dict[str, tuple[str, str]] = {}
+    if "tower" in platforms:
+        if values["TOWER_COOKIE"].strip():
+            results["Tower"] = validate_tower(values["TOWER_COOKIE"])
         else:
-            results["蓝湖"] = validate_lanhu(values["LANHU_COOKIE"], lanhu_check_url)
-    else:
-        results["蓝湖"] = ("disabled", "蓝湖能力未启用")
+            results["Tower"] = ("failed", "未配置 Tower Cookie")
+    if "eolink" in platforms:
+        if platform_is_complete("eolink", values):
+            results["Eolink"] = validate_eolink(
+                values["EOLINK_BASE_URL"],
+                values["EOLINK_USER"],
+                values["EOLINK_PASSWORD"],
+            )
+        else:
+            results["Eolink"] = ("failed", "Eolink 配置不完整")
+    if "lanhu" in platforms:
+        try:
+            enabled = parse_enabled(values["LANHU_ENABLED"])
+        except ValueError as error:
+            results["蓝湖"] = ("failed", str(error))
+        else:
+            if enabled:
+                results["蓝湖"] = validate_lanhu(
+                    values["LANHU_COOKIE"], lanhu_check_url
+                )
+            else:
+                results["蓝湖"] = ("disabled", "蓝湖能力未启用")
     return results
 
 
 def print_summary(path: Path, results: dict[str, tuple[str, str]]) -> None:
     print("\nSpecWeaver 配置结果")
-    print(f"- 配置文件: {path}（权限 600）")
+    path_status = "权限 600" if path.is_file() else "尚未创建"
+    print(f"- 配置文件: {path}（{path_status}）")
     print("- 源码准备: 由插件平台安装和缓存，无需本地仓库")
     for platform, (status, message) in results.items():
         print(f"- {platform}: {status} · {message}")
@@ -306,13 +400,42 @@ def print_existing_status(path: Path, values: dict[str, str]) -> None:
     print(f"- Tower: {tower_status}")
     print(f"- Eolink: {eolink_status}")
     print(f"- 蓝湖: {lanhu_status}")
-    print("未执行联网验证；如需修改或验证，请运行 scripts/setup.sh --configure。")
+    print("未执行联网验证；可运行 specweaver check 检查连接。")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="配置并验证 SpecWeaver 认证信息")
-    parser.add_argument("--configure", action="store_true", help="重新配置认证信息")
-    parser.add_argument("--non-interactive", action="store_true", help="只读取现有配置和环境变量")
+    parser = argparse.ArgumentParser(
+        prog="specweaver",
+        description="配置并验证 SpecWeaver 认证信息",
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=("configure", "check"),
+        help="配置认证或检查连接",
+    )
+    parser.add_argument(
+        "platform",
+        nargs="?",
+        choices=PLATFORMS,
+        help="只处理 tower、eolink 或 lanhu",
+    )
+    parser.add_argument(
+        "--configure",
+        action="store_true",
+        dest="legacy_configure",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="只读取现有配置和环境变量",
+    )
+    parser.add_argument(
+        "--lanhu-url",
+        default="",
+        help="可选：检查蓝湖 Cookie 和指定项目权限，不会保存链接",
+    )
     return parser.parse_args()
 
 
@@ -320,19 +443,33 @@ def main() -> int:
     args = parse_args()
     path = config_file()
     existing = load_existing(path)
+    command = args.command
+    if args.legacy_configure or args.non_interactive:
+        command = command or "configure"
 
-    if path.is_file() and not args.configure and not args.non_interactive:
+    if path.is_file() and command is None:
         print_existing_status(path, existing)
         return 0
 
+    if command == "check":
+        platforms = [args.platform] if args.platform else list(PLATFORMS)
+        results = validate_platforms(existing, platforms, args.lanhu_url)
+        print_summary(path, results)
+        failed = [name for name, (status, _) in results.items() if status == "failed"]
+        if failed:
+            print(f"连接检查未全部通过: {', '.join(failed)}")
+            return 1
+        return 0
+
     if args.non_interactive:
+        platforms = [args.platform] if args.platform else list(PLATFORMS)
         try:
-            values = merged_non_interactive(existing)
+            values = merged_non_interactive(existing, platforms)
         except ValueError as error:
             print(f"错误: {error}")
             return 2
-        lanhu_check_url = os.getenv("LANHU_CHECK_URL", "")
-        results = validate_all(values, lanhu_check_url)
+        lanhu_check_url = args.lanhu_url or os.getenv("LANHU_CHECK_URL", "")
+        results = validate_platforms(values, platforms, lanhu_check_url)
         write_config_atomic(path, values)
         print_summary(path, results)
         failed = [name for name, (status, _) in results.items() if status == "failed"]
@@ -342,9 +479,23 @@ def main() -> int:
         return 0
 
     values = existing
+    platforms = [args.platform] if args.platform else missing_platforms(values)
+    if not platforms:
+        print_existing_status(path, values)
+        print(
+            "没有缺失配置；如需更新单个平台，请运行 "
+            "specweaver configure tower、eolink 或 lanhu。"
+        )
+        return 0
+
+    only_missing = args.platform is None
     while True:
-        values, lanhu_check_url = collect_interactive(values)
-        results = validate_all(values, lanhu_check_url)
+        values = collect_interactive(
+            values,
+            platforms,
+            only_missing=only_missing,
+        )
+        results = validate_platforms(values, platforms, args.lanhu_url)
         write_config_atomic(path, values)
         print_summary(path, results)
         failed = [name for name, (status, _) in results.items() if status == "failed"]
@@ -353,8 +504,15 @@ def main() -> int:
         print(f"认证验证未全部通过: {', '.join(failed)}")
         answer = input("是否立即重新填写并验证？[Y/n]: ").strip().lower()
         if answer not in {"n", "no"}:
+            platforms = [
+                platform
+                for platform in platforms
+                if PLATFORM_LABELS[platform] in failed
+            ]
+            only_missing = False
             continue
-        print("已保留当前配置，可稍后运行 scripts/setup.sh --configure。")
+        suffix = f" {args.platform}" if args.platform else ""
+        print(f"已保留当前配置，可稍后运行 specweaver configure{suffix}。")
         return 1
 
 

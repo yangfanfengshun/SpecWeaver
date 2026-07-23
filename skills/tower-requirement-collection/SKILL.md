@@ -87,7 +87,7 @@ API 含 Eolink 链接或 API ID 时为“已发现”，否则为“未发现”
 
 区分 `missing_config`、`disabled`、`auth_expired`、`forbidden`、`network_error` 和资料缺失。
 
-- Tower 认证失效：暂停整个流程，提示运行安装插件中的 `scripts/setup.sh --configure`，更新后从 `TOWER_READ` 重试。
+- Tower 认证失效：暂停整个流程，提示运行 `specweaver configure tower`，只更新 Tower Cookie，成功后从 `TOWER_READ` 重试。
 - 蓝湖认证失效：暂停蓝湖步骤，让用户选择更新后重试，或明确确认本次不采用蓝湖；不得自动改成“无设计稿”。
 - Eolink 认证失效：暂停 API 步骤，让用户选择更新后重试，或明确确认本次不采用 API；不得自动改成“无 API”。
 - 不输出 Cookie、密码、登录响应或其他敏感值；认证失败后不要盲目重复请求。

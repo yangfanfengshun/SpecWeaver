@@ -1,0 +1,140 @@
+---
+description: Install, update, load, configure, verify, or troubleshoot the SpecWeaver plugin in Cursor
+globs:
+alwaysApply: false
+---
+
+# Cursor 中的 SpecWeaver
+
+用户要求在 Cursor 中安装、更新、加载、配置、验证或排查 SpecWeaver 时使用本规则。
+SpecWeaver 通过内置 Skills 和 MCP 读取 Tower、Eolink 与可选的蓝湖资料。
+
+## 安装边界
+
+安装插件和配置数据源认证是两个独立阶段：
+
+1. 从公开 GitHub 仓库安装插件；
+2. 重新加载 Cursor 并新建 Agent 对话；
+3. 从插件根目录安装 `specweaver` 终端命令；
+4. 在终端补齐认证配置；
+5. 使用用户有权访问的真实任务验证能力。
+
+仅导入仓库或下载插件文件，不代表插件已经可以读取数据源。
+
+## 安装前检查
+
+先确认：
+
+```bash
+uv --version
+```
+
+- Cursor 能使用 `/add-plugin` 或 Customize 插件界面；
+- macOS 和 Linux 直接支持，Windows 建议使用 WSL；
+- 当前环境可以访问 GitHub 和用户启用的数据源；
+- 用户不需要执行 `git clone`，也不需要访问 SpecWeaver 的私有开发仓库。
+
+如果 `/add-plugin` 不可用，先让用户更新 Cursor。不要编造
+`cursor-agent plugin install` 命令；Cursor 当前没有独立的非交互式 CLI 安装命令。
+
+## 首次安装
+
+在新的 Cursor Agent 对话中执行：
+
+```text
+/add-plugin https://github.com/yangfanfengshun/SpecWeaver
+```
+
+随后在插件面板中从导入的 marketplace 安装 `specweaver`。如果 Cursor 提供 user
+或 project 安装范围，让用户按实际用途选择，不要静默代选。
+
+安装会修改 Cursor 插件配置。执行前说明影响，不绕过用户确认或组织策略。
+
+## 加载插件
+
+安装完成后：
+
+1. 执行 `Developer: Reload Window`；
+2. 新建 Cursor Agent 对话；
+3. 确认 SpecWeaver Skills 和三个 MCP server 已出现。
+
+完成重新加载和新对话前，不要声称新安装的版本已经生效。
+
+## 安装终端入口与首次配置
+
+如果终端还没有 `specweaver` 命令，在新对话中发送：
+
+```text
+安装 SpecWeaver 终端命令
+```
+
+使用 `configure-specweaver` Skill 从 `${CURSOR_PLUGIN_ROOT}` 执行
+`scripts/setup.sh --install-cli`。安装入口后，在普通终端运行：
+
+```bash
+specweaver configure
+```
+
+首次配置只补齐缺失项。蓝湖只收集是否启用和 Cookie，不要求项目链接；首次读取
+真实设计稿时再检查 Cookie 和项目权限。Tower、蓝湖 Cookie 和 Eolink 密码只能
+输入终端中的隐藏输入，不能发送到 Cursor 对话。
+
+配置保存在 `~/.specweaver/.env`。不要读取、展示、总结该文件，也不要把它复制到
+用户项目。
+
+某个平台失效时只运行对应命令：
+
+```bash
+specweaver configure tower
+specweaver configure eolink
+specweaver configure lanhu
+```
+
+连接检查使用 `specweaver check`；不得让用户重填未失效平台。
+
+## 验证安装
+
+让用户提供一个自己有权访问的 Tower 任务链接。满足以下条件才算完整验证：
+
+1. Cursor 能发现 `tower-requirement-collection`；
+2. 能调用插件内置 Tower MCP；
+3. 能返回真实任务信息；
+4. 能进入预期的 Bug 或普通需求流程。
+
+不要把私有任务内容用作公开测试数据，也不要在诊断信息中包含凭证。
+
+## 更新已有安装
+
+在 Cursor 的 Customize 或 Plugins 界面刷新导入的 marketplace，并对
+`specweaver` 执行 Update 或 Reinstall。随后执行 `Developer: Reload Window` 并
+新建 Agent 对话，再通过 `configure-specweaver` Skill 重新执行
+`scripts/setup.sh --install-cli`，让终端入口指向当前插件版本。
+
+更新后核对插件详情显示的版本。不要编辑 `~/.cursor/plugins/cache` 下的文件来
+伪造版本更新。
+
+如果从 GitHub 导入的 marketplace 在 Update 或 Reinstall 后仍停留在旧版本，应
+报告实际版本，并说明 GitHub 导入尚未刷新。不要删除 Cursor 的整个插件缓存。只有
+用户明确接受需要本地 checkout 的方案时，才提供 local development plugin 作为
+临时替代。
+
+## 故障处理
+
+- 找不到插件源：核对 GitHub 地址和网络访问；
+- 插件已安装但 Skill 或 MCP 不出现：重新加载窗口并新建 Agent 对话；
+- MCP 启动失败：确认 `uv --version`，再查看 Cursor 的 Tools & MCP 错误状态；
+- 认证失败：保留插件，运行
+  `specweaver configure <platform>`，只更新受影响的数据源；
+- 蓝湖被主动关闭：将 `LANHU_ENABLED=false` 视为能力关闭，不视为认证失败；
+- 组织策略阻止安装：说明策略边界，让用户或管理员批准 marketplace，不绕过策略。
+
+## 运行时规则
+
+安装后，每个 SpecWeaver 请求都应遵循对应的 `SKILL.md`：
+
+- 配置与连接检查：`configure-specweaver`；
+- Tower Bug 和需求资料收集：`tower-requirement-collection`；
+- 受控 Git 提交：`git-commit`。
+
+本规则只负责 Cursor 特有的安装和生命周期说明，不能替代 Skill 中的流程门槛、
+用户确认和完成检查。

@@ -91,4 +91,4 @@ SpecWeaver-Commit: <branch>@<full-head>
 6. 用户明确确认目标 Tower 和内容后，调用 `tower_add_comment(url, content, dry_run=false)`。
 7. 发布后重新读取评论，确认唯一标记存在；没有证据时不得声称同步完成。
 
-Tower 认证失效时提示运行插件中的 `scripts/setup.sh --configure`，保留已完成的 Git 提交，并在认证恢复后只重试 Tower 同步步骤。
+Tower 认证失效时提示运行 `specweaver configure tower`，保留已完成的 Git 提交，并在认证恢复后只重试 Tower 同步步骤。

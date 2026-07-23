@@ -406,7 +406,7 @@ def parse_todo(soup: BeautifulSoup, url: str) -> dict:
 async def load_todo_data(url: str) -> dict:
     response = await request(url)
     if is_login_page(response):
-        raise RuntimeError("Tower Cookie 已过期，请运行 setup.sh --configure 更新后重试")
+        raise RuntimeError("Tower Cookie 已过期，请运行 specweaver configure tower 更新后重试")
     soup = BeautifulSoup(response.text, "lxml")
     data = parse_todo(soup, url)
     if not data["title"]:
@@ -683,7 +683,7 @@ async def tower_add_comment(url: str, content: str, dry_run: bool = True) -> str
     except Exception as error:
         return tool_error(error)
     if is_login_page(response):
-        return "错误: Tower Cookie 已过期，请运行 setup.sh --configure 更新后重试"
+        return "错误: Tower Cookie 已过期，请运行 specweaver configure tower 更新后重试"
     soup = BeautifulSoup(response.text, "lxml")
     meta = parse_comment_meta(soup)
     missing = [

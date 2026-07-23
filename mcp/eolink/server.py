@@ -138,7 +138,7 @@ async def api_post(path: str, form: dict[str, Any], retry: bool = True) -> dict:
         await ensure_login(force=True)
         return await api_post(path, form, retry=False)
     if payload.get("statusCode") == SESSION_EXPIRED_CODE:
-        raise RuntimeError("Eolink 登录会话已失效，请运行 setup.sh --configure 更新认证后重试")
+        raise RuntimeError("Eolink 登录会话已失效，请运行 specweaver configure eolink 更新认证后重试")
     return payload
 
 
