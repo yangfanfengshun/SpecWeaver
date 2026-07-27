@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import argparse
-from getpass import getpass
 import hashlib
 import os
 from pathlib import Path
@@ -35,6 +34,10 @@ PLATFORM_LABELS = {
     "eolink": "Eolink",
     "lanhu": "蓝湖",
 }
+
+
+class SkipPlatform(Exception):
+    pass
 
 
 def config_file() -> Path:
@@ -149,16 +152,26 @@ def prompt_value(
 ) -> str:
     status = "已配置" if current else "未配置"
     if secret:
-        prompt = f"{label}（{status}，回车保留当前值）: "
-        value = getpass(prompt)
+        hint = "回车保留当前值" if current else "回车跳过该平台"
+        value = input(f"{label}（{status}，明文输入，{hint}）: ").strip()
     else:
         visible = f"当前值: {current}" if current else status
-        value = input(f"{label}（{visible}，回车保留）: ").strip()
+        hint = "回车保留" if current else "回车跳过该平台"
+        value = input(f"{label}（{visible}，{hint}）: ").strip()
     result = value or current
     if required and not result:
-        print(f"{label}不能为空。")
-        return prompt_value(key, label, current, secret=secret, required=required)
+        raise SkipPlatform
     return result
+
+
+def prompt_configure(label: str) -> bool:
+    answer = input(f"是否现在配置{label}？[Y/s]: ").strip().lower()
+    if not answer or answer in {"y", "yes"}:
+        return True
+    if answer in {"s", "skip", "n", "no"}:
+        return False
+    print("请输入 y 或 s。")
+    return prompt_configure(label)
 
 
 def prompt_enabled(current: str) -> str:
@@ -183,57 +196,95 @@ def collect_interactive(
     platforms: list[str],
     *,
     only_missing: bool,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], list[str]]:
     values = dict(existing)
+    skipped: list[str] = []
     if "tower" in platforms:
         print("\n配置 Tower")
         print("用于读取任务、下载附件和按明确授权发布评论。")
-        if not only_missing or not values["TOWER_COOKIE"]:
-            values["TOWER_COOKIE"] = prompt_value(
-                "TOWER_COOKIE", "Tower Cookie", values["TOWER_COOKIE"], secret=True
-            )
+        if not prompt_configure(" Tower"):
+            skipped.append("tower")
+        else:
+            previous = values["TOWER_COOKIE"]
+            try:
+                if not only_missing or not values["TOWER_COOKIE"]:
+                    values["TOWER_COOKIE"] = prompt_value(
+                        "TOWER_COOKIE",
+                        "Tower Cookie",
+                        values["TOWER_COOKIE"],
+                        secret=True,
+                    )
+            except SkipPlatform:
+                values["TOWER_COOKIE"] = previous
+                skipped.append("tower")
 
     if "eolink" in platforms:
         print("\n配置 Eolink")
         print("用于读取项目、接口列表和接口详情。")
-        if not only_missing or not values["EOLINK_BASE_URL"]:
-            values["EOLINK_BASE_URL"] = prompt_value(
-                "EOLINK_BASE_URL", "Eolink 根地址", values["EOLINK_BASE_URL"]
-            ).rstrip("/")
-        if not only_missing or not values["EOLINK_USER"]:
-            values["EOLINK_USER"] = prompt_value(
-                "EOLINK_USER", "Eolink 账号", values["EOLINK_USER"]
-            )
-        if not only_missing or not values["EOLINK_PASSWORD"]:
-            values["EOLINK_PASSWORD"] = prompt_value(
-                "EOLINK_PASSWORD",
-                "Eolink 密码",
-                values["EOLINK_PASSWORD"],
-                secret=True,
-            )
+        if not prompt_configure(" Eolink"):
+            skipped.append("eolink")
+        else:
+            previous = {
+                key: values[key]
+                for key in ("EOLINK_BASE_URL", "EOLINK_USER", "EOLINK_PASSWORD")
+            }
+            try:
+                if not only_missing or not values["EOLINK_BASE_URL"]:
+                    values["EOLINK_BASE_URL"] = prompt_value(
+                        "EOLINK_BASE_URL",
+                        "Eolink 根地址",
+                        values["EOLINK_BASE_URL"],
+                    ).rstrip("/")
+                if not only_missing or not values["EOLINK_USER"]:
+                    values["EOLINK_USER"] = prompt_value(
+                        "EOLINK_USER", "Eolink 账号", values["EOLINK_USER"]
+                    )
+                if not only_missing or not values["EOLINK_PASSWORD"]:
+                    values["EOLINK_PASSWORD"] = prompt_value(
+                        "EOLINK_PASSWORD",
+                        "Eolink 密码",
+                        values["EOLINK_PASSWORD"],
+                        secret=True,
+                    )
+            except SkipPlatform:
+                values.update(previous)
+                skipped.append("eolink")
 
     if "lanhu" in platforms:
         print("\n配置蓝湖")
-        should_prompt_enabled = (
-            not only_missing
-            or not values["LANHU_ENABLED"]
-            or values["LANHU_ENABLED"].strip().lower() not in {"true", "false"}
-        )
-        if should_prompt_enabled:
-            current_enabled = values["LANHU_ENABLED"].strip().lower()
-            if current_enabled not in {"true", "false"}:
-                current_enabled = "true"
-            values["LANHU_ENABLED"] = prompt_enabled(current_enabled)
-        if parse_enabled(values["LANHU_ENABLED"]):
-            if not only_missing or not values["LANHU_COOKIE"]:
-                values["LANHU_COOKIE"] = prompt_value(
-                    "LANHU_COOKIE",
-                    "蓝湖 Cookie",
-                    values["LANHU_COOKIE"],
-                    secret=True,
+        if not prompt_configure("蓝湖"):
+            skipped.append("lanhu")
+        else:
+            previous = {
+                key: values[key] for key in ("LANHU_ENABLED", "LANHU_COOKIE")
+            }
+            try:
+                should_prompt_enabled = (
+                    not only_missing
+                    or not values["LANHU_ENABLED"]
+                    or values["LANHU_ENABLED"].strip().lower() not in {"true", "false"}
                 )
-            print("蓝湖项目权限将在首次读取真实设计稿时验证，无需在安装时提供链接。")
-    return values
+                if should_prompt_enabled:
+                    current_enabled = values["LANHU_ENABLED"].strip().lower()
+                    if current_enabled not in {"true", "false"}:
+                        current_enabled = "true"
+                    values["LANHU_ENABLED"] = prompt_enabled(current_enabled)
+                if parse_enabled(values["LANHU_ENABLED"]):
+                    if not only_missing or not values["LANHU_COOKIE"]:
+                        values["LANHU_COOKIE"] = prompt_value(
+                            "LANHU_COOKIE",
+                            "蓝湖 Cookie",
+                            values["LANHU_COOKIE"],
+                            secret=True,
+                        )
+                    print(
+                        "蓝湖项目权限将在首次读取真实设计稿时验证，"
+                        "无需在安装时提供链接。"
+                    )
+            except SkipPlatform:
+                values.update(previous)
+                skipped.append("lanhu")
+    return values, skipped
 
 
 def validate_tower(cookie: str) -> tuple[str, str]:
@@ -382,6 +433,30 @@ def print_summary(path: Path, results: dict[str, tuple[str, str]]) -> None:
         print(f"- {platform}: {status} · {message}")
 
 
+def validate_with_skips(
+    values: dict[str, str],
+    platforms: list[str],
+    skipped: list[str],
+    lanhu_check_url: str = "",
+) -> dict[str, tuple[str, str]]:
+    results: dict[str, tuple[str, str]] = {}
+    for platform in platforms:
+        label = PLATFORM_LABELS[platform]
+        if platform in skipped:
+            results[label] = ("skipped", "已跳过，可稍后配置")
+        else:
+            results.update(validate_platforms(values, [platform], lanhu_check_url))
+    return results
+
+
+def print_deferred(platforms: list[str]) -> None:
+    if len(platforms) == len(PLATFORMS):
+        print("已跳过认证配置；稍后运行：specweaver configure")
+        return
+    commands = "、".join(f"specweaver configure {platform}" for platform in platforms)
+    print(f"已跳过配置；稍后运行：{commands}")
+
+
 def print_existing_status(path: Path, values: dict[str, str]) -> None:
     print(f"已保留现有认证配置：{path}")
     tower_status = "已配置" if values["TOWER_COOKIE"] else "未配置"
@@ -489,17 +564,32 @@ def main() -> int:
         return 0
 
     only_missing = args.platform is None
+    if args.platform is None and not prompt_configure("认证信息"):
+        print_deferred(platforms)
+        return 0
+
     while True:
-        values = collect_interactive(
+        values, skipped = collect_interactive(
             values,
             platforms,
             only_missing=only_missing,
         )
-        results = validate_platforms(values, platforms, args.lanhu_url)
-        write_config_atomic(path, values)
+        active_platforms = [
+            platform for platform in platforms if platform not in skipped
+        ]
+        results = validate_with_skips(
+            values,
+            platforms,
+            skipped,
+            args.lanhu_url,
+        )
+        if active_platforms:
+            write_config_atomic(path, values)
         print_summary(path, results)
         failed = [name for name, (status, _) in results.items() if status == "failed"]
         if not failed:
+            if skipped:
+                print_deferred(skipped)
             return 0
         print(f"认证验证未全部通过: {', '.join(failed)}")
         answer = input("是否立即重新填写并验证？[Y/n]: ").strip().lower()

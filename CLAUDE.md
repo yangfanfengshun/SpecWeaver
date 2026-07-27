@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.5.1/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.6.0/scripts/setup.sh --configure
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -61,7 +61,7 @@ claude plugin install specweaver@specweaver && \
 
 第三条命令从当前版本缓存启动首次配置，并安装后续使用的 `specweaver` 终端命令。
 首次配置只补齐缺失项。蓝湖只收集是否启用和 Cookie，不要求项目链接；首次读取
-真实设计稿时再验证 Cookie 和项目权限。Cookie 和密码只能输入终端中的隐藏输入，
+真实设计稿时再验证 Cookie 和项目权限。Cookie 和密码只能输入终端中的明文输入，
 不能发送到 Claude 对话。配置保存在 `~/.specweaver/.env`。
 
 上述缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
@@ -111,7 +111,7 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.5.1/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.6.0/scripts/setup.sh --configure
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能
@@ -173,7 +173,7 @@ Claude Code 从以下文件发现插件：
 
 ## 认证和隐私
 
-- 只让用户在终端隐藏输入中填写 Cookie、账号和密码；
+- 只让用户在终端明文输入中填写 Cookie、账号和密码；
 - 不让用户把凭证粘贴到 Claude 对话；
 - 不读取或输出 `~/.specweaver/.env`；
 - 不把认证信息写入用户项目、插件目录、提交或日志；

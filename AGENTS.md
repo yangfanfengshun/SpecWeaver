@@ -56,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```
 
 该命令安装或复用 Codex 中的 `specweaver@specweaver`，将公共终端入口指向
-`~/.specweaver/runtime`，并立即补齐缺失配置。Cookie 和密码通过终端隐藏输入，
+`~/.specweaver/runtime`，并立即补齐缺失配置。Cookie 和密码通过终端明文输入，
 不能发送到 Codex 对话。配置保存在 `~/.specweaver/.env`。
 
 用户明确要求同时安装本机已存在的多个 AI 宿主时，省略 `--codex`：
@@ -70,7 +70,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.5.1/scripts/setup.sh --configure
+~/.codex/plugins/cache/specweaver/specweaver/0.6.0/scripts/setup.sh --configure
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
@@ -165,7 +165,7 @@ Tower、Eolink 或蓝湖单独失效时，不得让用户重填其他平台。
 用户要求安装后初始化、配置、重新配置、更新 Cookie 或密码、检查连接时，使用
 `configure-specweaver` Skill。
 
-- 认证信息只通过终端隐藏输入；
+- 认证信息只通过终端明文输入，允许用户整体或按平台跳过配置；
 - 不要求用户在对话中粘贴 Cookie、密码或 Token；
 - 不读取、展示或总结 `~/.specweaver/.env`；
 - 配置失败时区分未配置、能力关闭、已配置待首次使用验证、登录失效、无权限和
