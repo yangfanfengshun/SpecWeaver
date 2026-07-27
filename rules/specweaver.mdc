@@ -84,9 +84,9 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 specweaver configure
 ```
 
-首次配置只补齐缺失项。蓝湖只收集是否启用和 Cookie，不要求项目链接；首次读取
-真实设计稿时再检查 Cookie 和项目权限。Tower、蓝湖 Cookie 和 Eolink 密码只能
-输入终端中的明文输入，不能发送到 Cursor 对话。配置可整体或按平台跳过。
+首次配置只补齐缺失项。三平台只保存认证信息，不执行联网验证；首次读取真实资源
+时再检查认证信息和访问权限。Tower、蓝湖 Cookie 和 Eolink 密码只能输入终端中的
+明文输入，不能发送到 Cursor 对话。配置可整体或按平台跳过。
 
 配置保存在 `~/.specweaver/.env`。不要读取、展示、总结该文件，也不要把它复制到
 用户项目。

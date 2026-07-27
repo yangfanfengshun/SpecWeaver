@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.6.1/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -60,9 +60,9 @@ claude plugin install specweaver@specweaver && \
 `project` 或 `local` scope。
 
 第三条命令从当前版本缓存启动首次配置，并安装后续使用的 `specweaver` 终端命令。
-首次配置只补齐缺失项。蓝湖只收集是否启用和 Cookie，不要求项目链接；首次读取
-真实设计稿时再验证 Cookie 和项目权限。Cookie 和密码只能输入终端中的明文输入，
-不能发送到 Claude 对话。配置保存在 `~/.specweaver/.env`。
+首次配置只补齐缺失项。三平台只保存认证信息，不执行联网验证；首次读取真实资源
+时再验证认证信息和访问权限。Cookie 和密码只能输入终端中的明文输入，不能发送到
+Claude 对话。配置保存在 `~/.specweaver/.env`。
 
 上述缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
 位置调整命令，或者回到 Claude Code 对话发送“配置 SpecWeaver”，由 AI 定位插件
@@ -111,7 +111,7 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.6.1/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能

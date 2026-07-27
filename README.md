@@ -109,14 +109,14 @@ specweaver configure
 3. 是否启用蓝湖设计稿能力；
 4. 启用蓝湖时填写蓝湖 Cookie。
 
-安装和配置不要求蓝湖项目链接。由于蓝湖可靠的权限检查依赖具体项目，Cookie 保存
-后会显示“已配置，待首次使用验证”；第一次读取真实设计稿时，再同时检查 Cookie
-和该项目的访问权限。
+安装和配置只保存三个平台的认证信息，不执行联网验证。保存后会显示“已配置，待
+首次使用验证”；第一次读取真实数据时，再检查认证信息和对应资源的访问权限。
 
 Cookie 和密码采用终端明文输入，方便用户核对。配置向导支持整体或按平台跳过，
 跳过不会清空已有值，也不会执行该平台的连接验证；稍后可运行
-`specweaver configure` 或指定平台继续配置。Tower 与 Eolink 会立即执行连接验证；
-验证失败时只重新填写失败的平台。
+`specweaver configure` 或指定平台继续配置。三个平台都在首次使用时验证；认证
+失效时只重新填写失败的平台。需要主动检查连接时运行 `specweaver check` 或指定
+平台。
 
 配置保存到：
 
@@ -157,7 +157,7 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.6.1/scripts/setup.sh --configure
+~/.codex/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
 ```
 
 Codex 的更新、重新安装、新任务加载和故障处理规则见
@@ -168,7 +168,7 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.6.1/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
 ```
 
 Claude Code 的更新、重载和故障处理规则见 [`CLAUDE.md`](./CLAUDE.md)。

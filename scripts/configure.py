@@ -30,6 +30,7 @@ CONFIG_KEYS = (
 )
 SECRET_KEYS = {"TOWER_COOKIE", "EOLINK_PASSWORD", "LANHU_COOKIE"}
 PLATFORMS = ("tower", "eolink", "lanhu")
+CONFIGURE_DEFERRED_PLATFORMS = frozenset(PLATFORMS)
 PLATFORM_LABELS = {
     "tower": "Tower",
     "eolink": "Eolink",
@@ -394,20 +395,33 @@ def validate_platforms(
     values: dict[str, str],
     platforms: list[str],
     lanhu_check_url: str = "",
+    deferred_platforms: frozenset[str] = frozenset(),
 ) -> dict[str, tuple[str, str]]:
     results: dict[str, tuple[str, str]] = {}
     if "tower" in platforms:
         if values["TOWER_COOKIE"].strip():
-            results["Tower"] = validate_tower(values["TOWER_COOKIE"])
+            if "tower" in deferred_platforms:
+                results["Tower"] = (
+                    "configured",
+                    "Tower Cookie 已保存；将在首次使用时验证",
+                )
+            else:
+                results["Tower"] = validate_tower(values["TOWER_COOKIE"])
         else:
             results["Tower"] = ("failed", "未配置 Tower Cookie")
     if "eolink" in platforms:
         if platform_is_complete("eolink", values):
-            results["Eolink"] = validate_eolink(
-                values["EOLINK_BASE_URL"],
-                values["EOLINK_USER"],
-                values["EOLINK_PASSWORD"],
-            )
+            if "eolink" in deferred_platforms:
+                results["Eolink"] = (
+                    "configured",
+                    "Eolink 认证信息已保存；将在首次使用时验证",
+                )
+            else:
+                results["Eolink"] = validate_eolink(
+                    values["EOLINK_BASE_URL"],
+                    values["EOLINK_USER"],
+                    values["EOLINK_PASSWORD"],
+                )
         else:
             results["Eolink"] = ("failed", "Eolink 配置不完整")
     if "lanhu" in platforms:
@@ -417,9 +431,15 @@ def validate_platforms(
             results["蓝湖"] = ("failed", str(error))
         else:
             if enabled:
-                results["蓝湖"] = validate_lanhu(
-                    values["LANHU_COOKIE"], lanhu_check_url
-                )
+                if "lanhu" in deferred_platforms:
+                    results["蓝湖"] = (
+                        "configured",
+                        "蓝湖 Cookie 已保存；将在首次使用时验证",
+                    )
+                else:
+                    results["蓝湖"] = validate_lanhu(
+                        values["LANHU_COOKIE"], lanhu_check_url
+                    )
             else:
                 results["蓝湖"] = ("disabled", "蓝湖能力未启用")
     return results
@@ -439,6 +459,7 @@ def validate_with_skips(
     platforms: list[str],
     skipped: list[str],
     lanhu_check_url: str = "",
+    deferred_platforms: frozenset[str] = frozenset(),
 ) -> dict[str, tuple[str, str]]:
     results: dict[str, tuple[str, str]] = {}
     for platform in platforms:
@@ -446,7 +467,14 @@ def validate_with_skips(
         if platform in skipped:
             results[label] = ("skipped", "已跳过，可稍后配置")
         else:
-            results.update(validate_platforms(values, [platform], lanhu_check_url))
+            results.update(
+                validate_platforms(
+                    values,
+                    [platform],
+                    lanhu_check_url,
+                    deferred_platforms,
+                )
+            )
     return results
 
 
@@ -510,7 +538,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--lanhu-url",
         default="",
-        help="可选：检查蓝湖 Cookie 和指定项目权限，不会保存链接",
+        help="check lanhu 时可选：检查指定项目权限，不会保存链接",
     )
     return parser.parse_args()
 
@@ -544,8 +572,11 @@ def main() -> int:
         except ValueError as error:
             print(f"错误: {error}")
             return 2
-        lanhu_check_url = args.lanhu_url or os.getenv("LANHU_CHECK_URL", "")
-        results = validate_platforms(values, platforms, lanhu_check_url)
+        results = validate_platforms(
+            values,
+            platforms,
+            deferred_platforms=CONFIGURE_DEFERRED_PLATFORMS,
+        )
         write_config_atomic(path, values)
         print_summary(path, results)
         failed = [name for name, (status, _) in results.items() if status == "failed"]
@@ -583,6 +614,7 @@ def main() -> int:
             platforms,
             skipped,
             args.lanhu_url,
+            CONFIGURE_DEFERRED_PLATFORMS,
         )
         if active_platforms:
             write_config_atomic(path, values)
