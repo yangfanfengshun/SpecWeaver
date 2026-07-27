@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import readline
 import tempfile
 from urllib.parse import parse_qs, urlparse
 

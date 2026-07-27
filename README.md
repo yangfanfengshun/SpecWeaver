@@ -157,7 +157,7 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.6.0/scripts/setup.sh --configure
+~/.codex/plugins/cache/specweaver/specweaver/0.6.1/scripts/setup.sh --configure
 ```
 
 Codex 的更新、重新安装、新任务加载和故障处理规则见
@@ -168,7 +168,7 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.6.0/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.6.1/scripts/setup.sh --configure
 ```
 
 Claude Code 的更新、重载和故障处理规则见 [`CLAUDE.md`](./CLAUDE.md)。

@@ -11,7 +11,7 @@
       "name": "specweaver",
       "source": "./",
       "description": "把 Tower、蓝湖和 Eolink 的分散上下文编织成可追溯的需求资料。",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "author": {
         "name": "Yangfan"
       },
