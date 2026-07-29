@@ -40,16 +40,18 @@ MCP 依赖由 `uv` 根据入口脚本声明准备，插件目录不维护 `.venv
 - 确认终端可以执行 `git --version` 和 `uv --version`；
 - 确认可以访问 GitHub；插件从公开发布仓库安装，不需要私有开发仓库权限；
 - 准备 Tower 登录邮箱和密码；
-- 在浏览器中登录需要使用的蓝湖账号；
+- 准备蓝湖登录手机号/邮箱和密码；
 - 准备 Eolink 根地址、登录账号和密码。
 
-蓝湖 Cookie 的获取方式：
+Tower 或蓝湖触发验证码、人机验证时，可以人工填写 Cookie：
 
 1. 打开浏览器开发者工具的 Network 面板；
 2. 刷新蓝湖页面；
-3. 选择一个发往对应域名的请求；
+3. 选择一个发往对应平台域名的请求；
 4. 从 Request Headers 中复制完整的 Cookie；
-5. Cookie 只粘贴到后续的终端配置向导，不要发送到 Agent 对话中。
+5. 运行 `specweaver configure tower --cookie` 或
+   `specweaver configure lanhu --cookie`，也可以按失败提示写入显示出的配置文件路径；
+6. Cookie 只输入终端或本机配置文件，不要发送到 Agent 对话中。
 
 ### 2. 推荐：一条命令安装
 
@@ -125,18 +127,19 @@ specweaver configure
 4. 全部；
 5. 退出。
 
-选中后不再逐个平台询问“是否配置”。Tower 普通流程输入邮箱和不回显的密码，
-立即执行一次真实网页登录；成功后保存邮箱、密码和生成的 Cookie，失败时不覆盖
-旧配置。Eolink 和蓝湖继续只保存，第一次读取真实数据时再检查访问权限。
+选中后不再逐个平台询问“是否配置”。Tower 和蓝湖普通流程输入账号与不回显的密码，
+立即执行一次真实网页登录；成功后保存账号、密码和生成的 Cookie，失败时不覆盖
+旧配置。Eolink 继续只保存，第一次读取真实数据时再检查访问权限。
 
-Tower 密码和 Eolink 密码输入不回显；Cookie 只输入终端，不能发送到 Agent 对话。
+Tower、蓝湖和 Eolink 密码输入不回显；Cookie 只输入终端，不能发送到 Agent 对话。
 蓝湖入口可选择启用/更新、停用或返回。未选择某个平台只表示本次不修改，稍后仍可
 运行 `specweaver configure <platform>`。
 
-Tower 网页登录要求验证码、二次验证或兼容失败时，使用人工兜底：
+Tower 或蓝湖网页登录要求人工验证或兼容失败时，使用对应的人工兜底：
 
 ```bash
 specweaver configure tower --cookie
+specweaver configure lanhu --cookie
 ```
 
 配置保存到：
@@ -178,7 +181,7 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。
@@ -191,7 +194,7 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。Claude 插件清单已声明三个 MCP server，
@@ -281,7 +284,9 @@ specweaver check tower
 | `EOLINK_USER` | 始终 | Eolink 登录账号 |
 | `EOLINK_PASSWORD` | 始终 | Eolink 登录密码 |
 | `LANHU_ENABLED` | 始终 | 只接受 `true` 或 `false` |
-| `LANHU_COOKIE` | 蓝湖启用时 | 读取设计列表、图层结构、预览图与切图 |
+| `LANHU_PHONE` | 蓝湖普通配置 | 蓝湖网页登录和 Cookie 续期，支持手机号或邮箱 |
+| `LANHU_PASSWORD` | 蓝湖普通配置 | 蓝湖网页登录和 Cookie 续期 |
+| `LANHU_COOKIE` | `configure lanhu --cookie` | 蓝湖人工 Cookie 兜底 |
 | `LANHU_CHECK_URL` | 可选 | 提前检查指定蓝湖项目权限，不写入配置 |
 
 旧配置缺少 `LANHU_ENABLED` 时按 `true` 处理。设置为 `false` 后，需求流程不会询问、读取或下载蓝湖资料。
@@ -328,12 +333,13 @@ Agent 会调用插件自带的配置脚本。认证值只应输入终端向导�
 
 ## 认证失效
 
-Tower 请求优先使用已保存 Cookie。Cookie 失效且邮箱密码可用时，同一批并发请求
-只执行一次自动登录，原子更新 Cookie，并把原始请求重试一次；密码错误、验证码、
-二次验证、网络异常或页面不兼容时停止，不会反复提交密码。
+Tower 和蓝湖请求优先使用已保存 Cookie。Cookie 失效且账号密码可用时，同一批并发
+请求只执行一次自动登录，原子更新 Cookie，并把原始请求重试一次；密码错误、账号
+锁定、人工验证、网络异常或页面不兼容时停止，不会反复提交密码。
 
-Eolink 或蓝湖认证失效，以及 Tower 无法自动续期时，插件会提示对应的
-`specweaver configure <platform>` 命令。只更新失效平台，不需要重跑安装。
+Eolink 认证失效，以及 Tower 或蓝湖无法自动续期时，插件会显示配置文件绝对路径、
+对应 Cookie 字段和 `specweaver configure <platform> --cookie` 命令。只更新失效平台，
+不需要重跑安装。
 
 - Tower 失效：暂停整个流程；
 - 蓝湖失效：更新后重试，或明确确认本次不采用设计稿；

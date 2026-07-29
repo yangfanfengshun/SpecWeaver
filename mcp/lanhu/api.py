@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 
-from common import parse_strict_bool, read_config
+from lanhu.session import lanhu_settings
 
 
 LANHU_BASE = "https://lanhuapp.com"
@@ -17,15 +17,6 @@ HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "request-from": "web",
 }
-
-
-def lanhu_settings() -> tuple[bool, str]:
-    config = read_config()
-    try:
-        enabled = parse_strict_bool(config["LANHU_ENABLED"], default=True)
-    except ValueError as error:
-        raise ValueError(f"LANHU_ENABLED {error}") from error
-    return enabled, config["LANHU_COOKIE"]
 
 
 def parse_lanhu_project_url(url: str) -> dict[str, str | None]:
@@ -289,7 +280,7 @@ async def fetch_design_structure(
 def structure_error(error: Exception) -> dict[str, Any]:
     if isinstance(error, httpx.HTTPStatusError):
         code = error.response.status_code
-        status = "auth_expired" if code == 401 else "forbidden" if code == 403 else "api_error"
+        status = "auth_expired" if code in {401, 418} else "forbidden" if code == 403 else "api_error"
         message = f"蓝湖返回 HTTP {code}"
     elif isinstance(error, httpx.HTTPError):
         status = "network_error"
@@ -311,7 +302,7 @@ def structure_error(error: Exception) -> dict[str, Any]:
 
 def disabled_or_config_error() -> dict[str, str] | None:
     try:
-        enabled, cookie = lanhu_settings()
+        enabled, cookie, account, password = lanhu_settings()
     except ValueError as error:
         return {"status": "config_error", "platform": "lanhu", "message": str(error)}
     if not enabled:
@@ -320,6 +311,10 @@ def disabled_or_config_error() -> dict[str, str] | None:
             "platform": "lanhu",
             "message": "蓝湖能力未启用（LANHU_ENABLED=false）",
         }
-    if not cookie:
-        return {"status": "missing_config", "platform": "lanhu", "message": "未设置 LANHU_COOKIE"}
+    if not cookie and not (account and password):
+        return {
+            "status": "missing_config",
+            "platform": "lanhu",
+            "message": "未设置蓝湖手机号/邮箱和密码，也未设置 LANHU_COOKIE",
+        }
     return None

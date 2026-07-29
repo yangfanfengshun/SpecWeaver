@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -60,8 +60,8 @@ claude plugin install specweaver@specweaver && \
 `project` 或 `local` scope。
 
 第三条命令只安装后续使用的 `specweaver` 终端命令。随后另行运行
-`specweaver configure`，从平台多选菜单进入配置。Tower 邮箱密码会立即验证并生成
-Cookie；Eolink 和蓝湖只保存、后验证。认证信息只能输入终端，密码不回显，不能
+`specweaver configure`，从平台多选菜单进入配置。Tower 和蓝湖账号密码会立即验证
+并生成 Cookie；Eolink 只保存、后验证。认证信息只能输入终端，密码不回显，不能
 发送到 Claude 对话。配置保存在 `~/.specweaver/.env`。
 
 上述缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
@@ -111,7 +111,7 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能

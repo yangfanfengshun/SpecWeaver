@@ -74,7 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
@@ -85,9 +85,10 @@ codex plugin add specweaver@specweaver && \
 位置调整命令，或者回到 Codex App 发送“配置 SpecWeaver”，由 AI 定位插件并启动
 配置。
 
-`specweaver configure` 先显示平台多选菜单。Tower 输入邮箱和不回显的密码并立即
-验证登录，成功后保存 Cookie；Eolink 和蓝湖只保存，第一次读取真实资源时再验证。
-Tower 要求人工验证时使用 `specweaver configure tower --cookie`。
+`specweaver configure` 先显示平台多选菜单。Tower 和蓝湖输入账号与不回显的密码并
+立即验证登录，成功后保存 Cookie；Eolink 只保存，第一次读取真实资源时再验证。
+Tower 或蓝湖要求人工验证时，按提示的配置文件路径填写对应 Cookie，或使用
+`specweaver configure <platform> --cookie`。
 
 若当前 Codex 客户端提供插件目录或专用插件管理工具，优先使用该界面或工具完成
 同一安装动作；不要为了绕过宿主权限策略而强制改用终端。

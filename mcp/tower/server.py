@@ -31,6 +31,7 @@ import mistune
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (
     IMAGE_EXTENSIONS,
+    manual_cookie_hint,
     prepare_output_dir,
     read_config,
     update_config_atomic,
@@ -134,7 +135,7 @@ async def refresh_tower_session(
                 message = "Tower 网页登录流程暂时不可用"
             raise TowerSessionError(
                 status,
-                f"{message}；请运行 specweaver configure tower --cookie",
+                f"{message}；{manual_cookie_hint('tower', 'TOWER_COOKIE')}",
             ) from error
         update_config_atomic({"TOWER_COOKIE": renewed_cookie})
         _runtime_cookie = renewed_cookie
@@ -180,7 +181,7 @@ async def request(url: str) -> httpx.Response:
         raise TowerSessionError(
             "auth_expired",
             "Tower 自动续期后仍需要登录；"
-            "请运行 specweaver configure tower --cookie",
+            + manual_cookie_hint("tower", "TOWER_COOKIE"),
         )
     return response
 

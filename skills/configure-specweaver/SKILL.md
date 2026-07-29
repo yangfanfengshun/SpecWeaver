@@ -1,6 +1,6 @@
 ---
 name: configure-specweaver
-description: 安全配置或重新配置 SpecWeaver 的 Tower、Eolink 和蓝湖认证信息，并执行连接检查。用户要求安装后初始化、配置 SpecWeaver、更新 Tower 邮箱密码或 Cookie、只更新某个平台、检查数据源认证、运行 specweaver configure 时使用。
+description: 安全配置或重新配置 SpecWeaver 的 Tower、Eolink 和蓝湖认证信息，并执行连接检查。用户要求安装后初始化、配置 SpecWeaver、更新 Tower/蓝湖账号密码或 Cookie、只更新某个平台、检查数据源认证、运行 specweaver configure 时使用。
 ---
 
 # 配置 SpecWeaver
@@ -18,15 +18,16 @@ description: 安全配置或重新配置 SpecWeaver 的 Tower、Eolink 和蓝湖
 5. 仅检查连接时运行 `specweaver check`；也可以在末尾加平台名，只检查一个平台。
 6. 让用户直接在终端向导中输入认证信息；密码不回显，不要让用户把密钥发送到对话中。
 7. Tower 普通配置输入邮箱密码，立即执行一次网页登录并生成 Cookie；失败不得覆盖旧配置，也不得自动重复提交密码。
-8. Tower 要求验证码、二次验证或网页流程不兼容时，提示 `specweaver configure tower --cookie`，该入口只保存 Cookie、后验证。
-9. Eolink 和蓝湖配置只保存认证信息，不联网验证；实际使用时验证。
-10. 未选择、返回或退出时保留已有值。按终端汇总说明成功、已关闭、已配置待首次使用验证、已返回或失败的平台。
+8. 蓝湖普通配置输入手机号/邮箱和密码，立即执行网页登录、兑换正式 Cookie 并保存；失败不得覆盖旧配置，也不得自动重复提交密码。
+9. Tower 或蓝湖要求验证码、人机验证、二次验证或网页流程不兼容时，输出配置文件绝对路径、对应的 `TOWER_COOKIE` / `LANHU_COOKIE` 字段，并提示 `specweaver configure <platform> --cookie`；人工入口只保存 Cookie、后验证。
+10. Eolink 配置只保存认证信息，不联网验证；实际使用时验证。
+11. 未选择、返回或退出时保留已有值。按终端汇总说明成功、已关闭、已配置待首次使用验证、已返回或失败的平台。
 
-Tower 成功状态必须是“登录验证成功”；Eolink 和蓝湖保存后标记为“已配置，待首次使用验证”。
+Tower 和蓝湖成功状态必须是“登录验证成功”；Eolink 保存后标记为“已配置，待首次使用验证”。
 
 ## 非交互模式
 
-仅当用户明确要求自动化配置，并且必要环境变量已在终端环境中准备好时，运行 `specweaver configure --non-interactive`。Tower 普通模式需要 `TOWER_EMAIL` 和 `TOWER_PASSWORD` 并执行一次真实登录；Cookie 兜底使用 `specweaver configure tower --cookie --non-interactive` 和 `TOWER_COOKIE`。Eolink、蓝湖仍延迟到首次使用时验证。
+仅当用户明确要求自动化配置，并且必要环境变量已在终端环境中准备好时，运行 `specweaver configure --non-interactive`。Tower 普通模式需要 `TOWER_EMAIL` 和 `TOWER_PASSWORD`；蓝湖普通模式需要 `LANHU_PHONE` 和 `LANHU_PASSWORD`，两者都执行一次真实登录。Cookie 兜底使用对应的 `specweaver configure <platform> --cookie --non-interactive` 和 Cookie 变量。Eolink 仍延迟到首次使用时验证。
 
 ## 安全边界
 

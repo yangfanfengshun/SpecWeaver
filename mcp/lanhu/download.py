@@ -78,7 +78,7 @@ async def download_design_images(
                     "design_name": design_name,
                     "source_url": image_url,
                     "status": (
-                        "auth_expired" if code == 401
+                        "auth_expired" if code in {401, 418}
                         else "forbidden" if code == 403
                         else "api_error"
                     ),
@@ -219,7 +219,7 @@ async def download_slice_assets(
                 failures.append({
                     **asset,
                     "status": (
-                        "auth_expired" if code == 401
+                        "auth_expired" if code in {401, 418}
                         else "forbidden" if code == 403
                         else "api_error"
                     ),

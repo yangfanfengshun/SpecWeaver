@@ -86,10 +86,11 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 specweaver configure
 ```
 
-首次配置先选择本次处理的平台。Tower 输入邮箱和不回显的密码，立即验证网页登录
-并生成 Cookie；Eolink 和蓝湖只保存，首次读取真实资源时再检查权限。认证信息只能
-输入终端，不能发送到 Cursor 对话。Tower 人工恢复入口为
-`specweaver configure tower --cookie`。
+首次配置先选择本次处理的平台。Tower 和蓝湖输入账号与不回显的密码，立即验证网页
+登录并生成 Cookie；Eolink 只保存，首次读取真实资源时再检查权限。认证信息只能输入
+终端，不能发送到 Cursor 对话。人工恢复入口为
+`specweaver configure tower --cookie` 和 `specweaver configure lanhu --cookie`；
+人工验证拦截时同时显示配置文件路径和需要填写的 Cookie 字段。
 
 配置保存在 `~/.specweaver/.env`。不要读取、展示、总结该文件，也不要把它复制到
 用户项目。

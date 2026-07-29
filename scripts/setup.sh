@@ -258,8 +258,12 @@ print_config_status() {
   fi
   if config_value_is_false LANHU_ENABLED; then
     lanhu_status="已关闭"
+  elif config_value_present LANHU_COOKIE &&
+    config_value_present LANHU_PHONE &&
+    config_value_present LANHU_PASSWORD; then
+    lanhu_status="已配置（支持自动续期）"
   elif config_value_present LANHU_COOKIE; then
-    lanhu_status="已配置"
+    lanhu_status="已配置（仅 Cookie）"
   fi
   echo "配置：Tower ${tower_status}；Eolink ${eolink_status}；蓝湖 ${lanhu_status}"
 }

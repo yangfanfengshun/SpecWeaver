@@ -2,6 +2,7 @@
 # /// script
 # requires-python = ">=3.10,<3.14"
 # dependencies = [
+#   "cryptography>=43.0.0,<47.0.0",
 #   "httpx>=0.27.0,<1.0.0",
 #   "python-dotenv>=1.0.0,<2.0.0",
 # ]
@@ -29,6 +30,7 @@ from tower_auth import (
     is_login_response,
     login_tower,
 )
+from lanhu_auth import LanhuLoginError, login_lanhu
 
 
 CONFIG_KEYS = (
@@ -39,10 +41,12 @@ CONFIG_KEYS = (
     "EOLINK_USER",
     "EOLINK_PASSWORD",
     "LANHU_ENABLED",
+    "LANHU_PHONE",
+    "LANHU_PASSWORD",
     "LANHU_COOKIE",
 )
 PLATFORMS = ("tower", "eolink", "lanhu")
-CONFIGURE_DEFERRED_PLATFORMS = frozenset(("eolink", "lanhu"))
+CONFIGURE_DEFERRED_PLATFORMS = frozenset(("eolink",))
 PLATFORM_LABELS = {
     "tower": "Tower",
     "eolink": "Eolink",
@@ -122,6 +126,7 @@ def required_keys(
     values: dict[str, str],
     *,
     tower_cookie_only: bool = False,
+    lanhu_cookie_only: bool = False,
 ) -> list[str]:
     required: list[str] = []
     if "tower" in platforms:
@@ -134,7 +139,10 @@ def required_keys(
     if "lanhu" in platforms:
         required.append("LANHU_ENABLED")
         if values["LANHU_ENABLED"] and parse_enabled(values["LANHU_ENABLED"]):
-            required.append("LANHU_COOKIE")
+            if lanhu_cookie_only:
+                required.append("LANHU_COOKIE")
+            elif not values["LANHU_COOKIE"].strip():
+                required.extend(("LANHU_PHONE", "LANHU_PASSWORD"))
     return required
 
 
@@ -143,6 +151,7 @@ def merged_non_interactive(
     platforms: list[str] | None = None,
     *,
     tower_cookie_only: bool = False,
+    lanhu_cookie_only: bool = False,
 ) -> dict[str, str]:
     values = dict(existing)
     for key in CONFIG_KEYS:
@@ -157,6 +166,7 @@ def merged_non_interactive(
             targets,
             values,
             tower_cookie_only=tower_cookie_only,
+            lanhu_cookie_only=lanhu_cookie_only,
         )
         if not values[key].strip()
     ]
@@ -252,6 +262,7 @@ def collect_interactive(
     platforms: list[str],
     *,
     tower_cookie_only: bool = False,
+    lanhu_cookie_only: bool = False,
 ) -> tuple[dict[str, str], list[str]]:
     values = dict(existing)
     skipped: list[str] = []
@@ -317,27 +328,50 @@ def collect_interactive(
             values["LANHU_ENABLED"] = "false"
         else:
             previous = {
-                key: values[key] for key in ("LANHU_ENABLED", "LANHU_COOKIE")
+                key: values[key]
+                for key in (
+                    "LANHU_ENABLED",
+                    "LANHU_PHONE",
+                    "LANHU_PASSWORD",
+                    "LANHU_COOKIE",
+                )
             }
             try:
                 values["LANHU_ENABLED"] = "true"
-                values["LANHU_COOKIE"] = prompt_value(
-                    "LANHU_COOKIE",
-                    "蓝湖 Cookie",
-                    values["LANHU_COOKIE"],
-                    secret=True,
-                )
-                print(
-                    "蓝湖项目权限将在首次读取真实设计稿时验证，"
-                    "无需在安装时提供链接。"
-                )
+                if lanhu_cookie_only:
+                    values["LANHU_COOKIE"] = prompt_value(
+                        "LANHU_COOKIE",
+                        "蓝湖 Cookie",
+                        values["LANHU_COOKIE"],
+                        secret=True,
+                    )
+                else:
+                    values["LANHU_PHONE"] = prompt_value(
+                        "LANHU_PHONE",
+                        "蓝湖登录手机号/邮箱",
+                        values["LANHU_PHONE"],
+                    )
+                    values["LANHU_PASSWORD"] = prompt_password(
+                        "蓝湖登录密码",
+                        values["LANHU_PASSWORD"],
+                    )
             except SkipPlatform:
                 values.update(previous)
                 skipped.append("lanhu")
     return values, skipped
 
 
-def authenticate_tower(values: dict[str, str]) -> tuple[str, str]:
+def manual_cookie_message(platform: str, key: str, path: Path) -> str:
+    return (
+        f"配置文件：{path}；请手动填写 {key}，"
+        f"或运行 specweaver configure {platform} --cookie"
+    )
+
+
+def authenticate_tower(
+    values: dict[str, str],
+    path: Path | None = None,
+) -> tuple[str, str]:
     try:
         values["TOWER_COOKIE"] = login_tower(
             values["TOWER_EMAIL"],
@@ -356,8 +390,12 @@ def authenticate_tower(values: dict[str, str]) -> tuple[str, str]:
         if error.kind == "verification":
             return (
                 "failed",
-                "Tower 要求验证码或二次验证；请使用 "
-                "specweaver configure tower --cookie",
+                "Tower 要求验证码或二次验证；"
+                + manual_cookie_message(
+                    "tower",
+                    "TOWER_COOKIE",
+                    path or config_file(),
+                ),
             )
         if error.kind == "network":
             return (
@@ -366,8 +404,62 @@ def authenticate_tower(values: dict[str, str]) -> tuple[str, str]:
             )
         return (
             "failed",
-            "Tower 网页登录流程暂时不可用；请使用 "
-            "specweaver configure tower --cookie",
+            "Tower 网页登录流程暂时不可用；"
+            + manual_cookie_message(
+                "tower",
+                "TOWER_COOKIE",
+                path or config_file(),
+            ),
+        )
+
+
+def authenticate_lanhu(
+    values: dict[str, str],
+    path: Path | None = None,
+) -> tuple[str, str]:
+    try:
+        values["LANHU_COOKIE"] = login_lanhu(
+            values["LANHU_PHONE"],
+            values["LANHU_PASSWORD"],
+        )
+        return (
+            "success",
+            "蓝湖登录验证成功；已保存手机号/邮箱、密码和登录 Cookie",
+        )
+    except LanhuLoginError as error:
+        if error.kind == "credentials":
+            return (
+                "failed",
+                "蓝湖登录失败：手机号/邮箱或密码错误；本次配置未保存",
+            )
+        if error.kind == "locked":
+            return (
+                "failed",
+                "蓝湖登录失败：账号已被锁定；本次配置未保存",
+            )
+        if error.kind == "verification":
+            return (
+                "failed",
+                "蓝湖要求人机验证或手机号认证；"
+                + manual_cookie_message(
+                    "lanhu",
+                    "LANHU_COOKIE",
+                    path or config_file(),
+                ),
+            )
+        if error.kind == "network":
+            return (
+                "failed",
+                "蓝湖登录暂时无法验证；本次配置未保存",
+            )
+        return (
+            "failed",
+            "蓝湖网页登录流程暂时不可用；"
+            + manual_cookie_message(
+                "lanhu",
+                "LANHU_COOKIE",
+                path or config_file(),
+            ),
         )
 
 
@@ -549,9 +641,18 @@ def print_existing_status(path: Path, values: dict[str, str]) -> None:
     )
     try:
         lanhu_enabled = parse_enabled(values["LANHU_ENABLED"] or "true")
-        lanhu_status = (
-            "已配置" if values["LANHU_COOKIE"] else "未配置"
-        ) if lanhu_enabled else "能力已关闭"
+        if not lanhu_enabled:
+            lanhu_status = "能力已关闭"
+        elif (
+            values.get("LANHU_COOKIE")
+            and values.get("LANHU_PHONE")
+            and values.get("LANHU_PASSWORD")
+        ):
+            lanhu_status = "已配置（支持自动续期）"
+        elif values.get("LANHU_COOKIE"):
+            lanhu_status = "已配置（仅 Cookie）"
+        else:
+            lanhu_status = "未配置"
     except ValueError:
         lanhu_status = "配置错误（LANHU_ENABLED 只接受 true 或 false）"
     print(f"- Tower: {tower_status}")
@@ -596,7 +697,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cookie",
         action="store_true",
-        help="Tower 人工 Cookie 恢复入口，仅用于 configure tower",
+        help="Tower/蓝湖人工 Cookie 恢复入口，仅用于 configure tower 或 lanhu",
     )
     return parser.parse_args()
 
@@ -608,6 +709,8 @@ def build_configure_results(
     skipped: list[str],
     *,
     tower_cookie_only: bool,
+    lanhu_cookie_only: bool = False,
+    path: Path | None = None,
 ) -> tuple[dict[str, tuple[str, str]], list[str]]:
     results: dict[str, tuple[str, str]] = {}
     saved: list[str] = []
@@ -617,7 +720,7 @@ def build_configure_results(
             results[label] = ("skipped", "已返回，原配置保持不变")
             continue
         if platform == "tower" and not tower_cookie_only:
-            result = authenticate_tower(values)
+            result = authenticate_tower(values, path)
             results["Tower"] = result
             if result[0] == "failed":
                 for key in ("TOWER_EMAIL", "TOWER_PASSWORD", "TOWER_COOKIE"):
@@ -634,6 +737,44 @@ def build_configure_results(
                 saved.append(platform)
             else:
                 results["Tower"] = ("failed", "未配置 Tower Cookie")
+            continue
+        if platform == "lanhu" and not parse_enabled(values["LANHU_ENABLED"]):
+            results["蓝湖"] = ("disabled", "蓝湖能力未启用")
+            saved.append(platform)
+            continue
+        if platform == "lanhu" and not lanhu_cookie_only:
+            has_credentials = bool(
+                values["LANHU_PHONE"].strip() and values["LANHU_PASSWORD"]
+            )
+            if not has_credentials and values["LANHU_COOKIE"].strip():
+                results["蓝湖"] = (
+                    "configured",
+                    "蓝湖 Cookie 已保留；将在首次使用时验证",
+                )
+                saved.append(platform)
+                continue
+            result = authenticate_lanhu(values, path)
+            results["蓝湖"] = result
+            if result[0] == "failed":
+                for key in (
+                    "LANHU_ENABLED",
+                    "LANHU_PHONE",
+                    "LANHU_PASSWORD",
+                    "LANHU_COOKIE",
+                ):
+                    values[key] = existing[key]
+                continue
+            saved.append(platform)
+            continue
+        if platform == "lanhu":
+            if values["LANHU_COOKIE"].strip():
+                results["蓝湖"] = (
+                    "configured",
+                    "蓝湖 Cookie 已保存；将在首次使用时验证",
+                )
+                saved.append(platform)
+            else:
+                results["蓝湖"] = ("failed", "未配置蓝湖 Cookie")
             continue
         results.update(
             validate_platforms(
@@ -655,9 +796,17 @@ def main() -> int:
     if args.legacy_configure or args.non_interactive:
         command = command or "configure"
 
-    if args.cookie and not (command == "configure" and args.platform == "tower"):
-        print("错误: --cookie 仅支持 specweaver configure tower --cookie")
+    if args.cookie and not (
+        command == "configure" and args.platform in {"tower", "lanhu"}
+    ):
+        print(
+            "错误: --cookie 仅支持 specweaver configure tower --cookie "
+            "或 specweaver configure lanhu --cookie"
+        )
         return 2
+
+    tower_cookie_only = bool(args.cookie and args.platform == "tower")
+    lanhu_cookie_only = bool(args.cookie and args.platform == "lanhu")
 
     if path.is_file() and command is None:
         print_existing_status(path, existing)
@@ -679,7 +828,8 @@ def main() -> int:
             values = merged_non_interactive(
                 existing,
                 platforms,
-                tower_cookie_only=args.cookie,
+                tower_cookie_only=tower_cookie_only,
+                lanhu_cookie_only=lanhu_cookie_only,
             )
         except ValueError as error:
             print(f"错误: {error}")
@@ -689,7 +839,9 @@ def main() -> int:
             existing,
             platforms,
             [],
-            tower_cookie_only=args.cookie,
+            tower_cookie_only=tower_cookie_only,
+            lanhu_cookie_only=lanhu_cookie_only,
+            path=path,
         )
         if saved:
             write_config_atomic(path, values)
@@ -708,14 +860,17 @@ def main() -> int:
     values, skipped = collect_interactive(
         existing,
         platforms,
-        tower_cookie_only=args.cookie,
+        tower_cookie_only=tower_cookie_only,
+        lanhu_cookie_only=lanhu_cookie_only,
     )
     results, saved = build_configure_results(
         values,
         existing,
         platforms,
         skipped,
-        tower_cookie_only=args.cookie,
+        tower_cookie_only=tower_cookie_only,
+        lanhu_cookie_only=lanhu_cookie_only,
+        path=path,
     )
     if saved:
         write_config_atomic(path, values)

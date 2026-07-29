@@ -2,6 +2,7 @@
 # /// script
 # requires-python = ">=3.10,<3.14"
 # dependencies = [
+#   "cryptography>=43.0.0,<47.0.0",
 #   "fastmcp>=3.3.1,<4.0.0",
 #   "httpx>=0.27.0,<1.0.0",
 #   "python-dotenv>=1.0.0,<2.0.0",
@@ -27,13 +28,16 @@ from lanhu.api import (
     fetch_design_structure,
     get_lanhu_image,
     is_lanhu_image_url,
-    lanhu_settings,
     normalize_design_response,
-    normalize_design_sectors,
     parse_lanhu_design_url,
     parse_lanhu_project_url,
     select_design_id,
     structure_error,
+)
+from lanhu.session import (
+    LanhuSessionError,
+    lanhu_settings,
+    run_with_lanhu_session,
 )
 from lanhu.design import (
     INLINE_NODE_LIMIT,
@@ -48,33 +52,50 @@ from lanhu.download import download_design_images, download_slice_assets
 mcp = FastMCP("SpecWeaver Lanhu Reader")
 
 
+def session_error_result(error: LanhuSessionError) -> dict[str, str]:
+    return {
+        "status": error.status,
+        "platform": "lanhu",
+        "message": str(error),
+    }
+
+
 @mcp.tool()
 async def lanhu_check_auth(project_url: str = "") -> dict[str, str]:
     """检查蓝湖能力和认证状态；提供标准项目链接时同时检查项目权限。"""
     early = disabled_or_config_error()
     if early:
         return early
-    _, cookie = lanhu_settings()
+    _, cookie, account, password = lanhu_settings()
     if not project_url:
+        if account and password:
+            method = "账号密码和 Cookie" if cookie else "账号密码"
+        else:
+            method = "Cookie"
         return {
             "status": "configured",
             "platform": "lanhu",
-            "message": "已配置蓝湖 Cookie；提供标准项目链接后可验证登录状态和项目权限",
+            "message": f"已配置蓝湖{method}；提供标准项目链接后可验证项目权限",
         }
     try:
         params = parse_lanhu_project_url(project_url)
     except ValueError as error:
         return {"status": "invalid_input", "platform": "lanhu", "message": str(error)}
     try:
-        async with create_client(cookie) as client:
-            image_payload, _, _ = await fetch_design_payloads(
-                client,
-                str(params["project_id"]),
-                params["team_id"],
-            )
+        async def operation(active_cookie: str):
+            async with create_client(active_cookie) as client:
+                return await fetch_design_payloads(
+                    client,
+                    str(params["project_id"]),
+                    params["team_id"],
+                )
+
+        image_payload, _, _ = await run_with_lanhu_session(operation)
+    except LanhuSessionError as error:
+        return session_error_result(error)
     except httpx.HTTPStatusError as error:
         code = error.response.status_code
-        status = "auth_expired" if code == 401 else "forbidden" if code == 403 else "api_error"
+        status = "auth_expired" if code in {401, 418} else "forbidden" if code == 403 else "api_error"
         return {"status": status, "platform": "lanhu", "message": f"蓝湖返回 HTTP {code}"}
     except httpx.HTTPError as error:
         return {"status": "network_error", "platform": "lanhu", "message": str(error)}
@@ -89,21 +110,27 @@ async def lanhu_get_designs(url: str) -> dict[str, Any]:
     early = disabled_or_config_error()
     if early:
         return early
-    _, cookie = lanhu_settings()
     try:
         params = parse_lanhu_project_url(url)
     except ValueError as error:
         return {"status": "invalid_input", "platform": "lanhu", "message": str(error)}
     try:
-        async with create_client(cookie) as client:
-            image_payload, sector_payload, sector_warning = await fetch_design_payloads(
-                client,
-                str(params["project_id"]),
-                params["team_id"],
-            )
+        async def operation(active_cookie: str):
+            async with create_client(active_cookie) as client:
+                return await fetch_design_payloads(
+                    client,
+                    str(params["project_id"]),
+                    params["team_id"],
+                )
+
+        image_payload, sector_payload, sector_warning = await run_with_lanhu_session(
+            operation
+        )
+    except LanhuSessionError as error:
+        return session_error_result(error)
     except httpx.HTTPStatusError as error:
         code = error.response.status_code
-        status = "auth_expired" if code == 401 else "forbidden" if code == 403 else "api_error"
+        status = "auth_expired" if code in {401, 418} else "forbidden" if code == 403 else "api_error"
         return {"status": status, "platform": "lanhu", "message": f"蓝湖返回 HTTP {code}"}
     except httpx.HTTPError as error:
         return {"status": "network_error", "platform": "lanhu", "message": str(error)}
@@ -126,13 +153,16 @@ async def lanhu_get_design_detail(
     early = disabled_or_config_error()
     if early:
         return early
-    _, cookie = lanhu_settings()
     try:
         params = parse_lanhu_design_url(url)
         selected_id = select_design_id(params, image_id)
         params["image_id"] = selected_id
-        async with create_client(cookie) as client:
-            detail, sketch = await fetch_design_structure(client, params, selected_id)
+
+        async def operation(active_cookie: str):
+            async with create_client(active_cookie) as client:
+                return await fetch_design_structure(client, params, selected_id)
+
+        detail, sketch = await run_with_lanhu_session(operation)
         document = normalize_design_document(url, params, detail, sketch)
         result: dict[str, Any] = {
             "status": "success",
@@ -165,6 +195,8 @@ async def lanhu_get_design_detail(
         return result
     except ValueError as error:
         return {"status": "invalid_input", "platform": "lanhu", "message": str(error)}
+    except LanhuSessionError as error:
+        return session_error_result(error)
     except Exception as error:
         return structure_error(error)
 
@@ -178,9 +210,16 @@ async def lanhu_download_design_images(
     early = disabled_or_config_error()
     if early:
         return early
-    _, cookie = lanhu_settings()
     try:
-        return await download_design_images(cookie, images, output_dir)
+        return await run_with_lanhu_session(
+            lambda active_cookie: download_design_images(
+                active_cookie,
+                images,
+                output_dir,
+            )
+        )
+    except LanhuSessionError as error:
+        return session_error_result(error)
     except ValueError as error:
         return {"status": "invalid_input", "platform": "lanhu", "message": str(error)}
 
@@ -196,23 +235,32 @@ async def lanhu_download_slices(
     early = disabled_or_config_error()
     if early:
         return early
-    _, cookie = lanhu_settings()
     try:
         params = parse_lanhu_design_url(url)
         selected_id = select_design_id(params, image_id)
         params["image_id"] = selected_id
-        async with create_client(cookie) as client:
-            _, sketch = await fetch_design_structure(client, params, selected_id)
-        assets = extract_slice_assets(sketch)
-        return await download_slice_assets(
-            cookie,
-            assets,
-            output_dir,
-            selected_id,
-            manifest_file,
-        )
+
+        async def operation(active_cookie: str):
+            async with create_client(active_cookie) as client:
+                _, sketch = await fetch_design_structure(
+                    client,
+                    params,
+                    selected_id,
+                )
+            assets = extract_slice_assets(sketch)
+            return await download_slice_assets(
+                active_cookie,
+                assets,
+                output_dir,
+                selected_id,
+                manifest_file,
+            )
+
+        return await run_with_lanhu_session(operation)
     except ValueError as error:
         return {"status": "invalid_input", "platform": "lanhu", "message": str(error)}
+    except LanhuSessionError as error:
+        return session_error_result(error)
     except Exception as error:
         return structure_error(error)
 

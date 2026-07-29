@@ -15,6 +15,8 @@ CONFIG_KEYS = (
     "EOLINK_USER",
     "EOLINK_PASSWORD",
     "LANHU_ENABLED",
+    "LANHU_PHONE",
+    "LANHU_PASSWORD",
     "LANHU_COOKIE",
 )
 SPECWEAVER_HOME = Path(
@@ -69,6 +71,13 @@ def update_config_atomic(updates: dict[str, str]) -> None:
     finally:
         if temp_path.exists():
             temp_path.unlink()
+
+
+def manual_cookie_hint(platform: str, key: str) -> str:
+    return (
+        f"配置文件：{CONFIG_FILE}；请手动填写 {key}，"
+        f"或运行 specweaver configure {platform} --cookie"
+    )
 
 
 def parse_strict_bool(value: str, *, default: bool | None = None) -> bool:
