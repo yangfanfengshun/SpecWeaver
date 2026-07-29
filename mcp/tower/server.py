@@ -12,9 +12,9 @@
 # ///
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 import hashlib
-from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
 import re
 import sys
@@ -29,7 +29,18 @@ import mistune
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import IMAGE_EXTENSIONS, prepare_output_dir, read_config
+from common import (
+    IMAGE_EXTENSIONS,
+    prepare_output_dir,
+    read_config,
+    update_config_atomic,
+)
+from tower_auth import (
+    TowerLoginError,
+    cookies_from_header,
+    is_login_response,
+    login_tower,
+)
 
 
 TOWER_BASE = "https://tower.im"
@@ -40,6 +51,8 @@ HEADERS = {
 mcp = FastMCP("SpecWeaver Tower Reader")
 _client: httpx.AsyncClient | None = None
 _client_cookie_fingerprint = ""
+_runtime_cookie = ""
+_login_lock: asyncio.Lock | None = None
 markdown_to_html = mistune.create_markdown(
     escape=True,
     hard_wrap=True,
@@ -47,24 +60,21 @@ markdown_to_html = mistune.create_markdown(
 )
 
 
+class TowerSessionError(RuntimeError):
+    def __init__(self, status: str, message: str):
+        super().__init__(message)
+        self.status = status
+
+
 def tower_cookie() -> str:
-    return read_config()["TOWER_COOKIE"]
+    return _runtime_cookie or read_config()["TOWER_COOKIE"]
 
 
-def cookies_from_header(value: str) -> httpx.Cookies:
-    cookies = httpx.Cookies()
-    if not value:
-        return cookies
-    parsed = SimpleCookie()
-    try:
-        parsed.load(value)
-    except CookieError as error:
-        raise ValueError("TOWER_COOKIE 格式无效") from error
-    if not parsed:
-        raise ValueError("TOWER_COOKIE 格式无效")
-    for name, morsel in parsed.items():
-        cookies.set(name, morsel.value, domain=".tower.im", path="/")
-    return cookies
+def login_lock() -> asyncio.Lock:
+    global _login_lock
+    if _login_lock is None:
+        _login_lock = asyncio.Lock()
+    return _login_lock
 
 
 async def get_client() -> httpx.AsyncClient:
@@ -83,7 +93,55 @@ async def get_client() -> httpx.AsyncClient:
     return _client
 
 
-async def request(url: str) -> httpx.Response:
+async def refresh_tower_session(
+    validation_url: str,
+    stale_fingerprint: str,
+) -> None:
+    global _runtime_cookie
+    async with login_lock():
+        current_cookie = tower_cookie()
+        current_fingerprint = hashlib.sha256(current_cookie.encode()).hexdigest()
+        if current_fingerprint != stale_fingerprint:
+            return
+        config = read_config()
+        email = config["TOWER_EMAIL"]
+        password = config["TOWER_PASSWORD"]
+        if not email or not password:
+            raise TowerSessionError(
+                "auth_expired",
+                "Tower Cookie 已过期，且未配置邮箱密码；"
+                "请运行 specweaver configure tower",
+            )
+        try:
+            renewed_cookie = await asyncio.to_thread(
+                login_tower,
+                email,
+                password,
+                validation_url=validation_url,
+            )
+        except TowerLoginError as error:
+            if error.kind == "credentials":
+                status = "auth_expired"
+                message = "Tower 邮箱或密码已失效"
+            elif error.kind == "verification":
+                status = "verification_required"
+                message = "Tower 要求验证码或二次验证"
+            elif error.kind == "network":
+                status = "network_error"
+                message = "Tower 登录网络异常"
+            else:
+                status = "compatibility_error"
+                message = "Tower 网页登录流程暂时不可用"
+            raise TowerSessionError(
+                status,
+                f"{message}；请运行 specweaver configure tower --cookie",
+            ) from error
+        update_config_atomic({"TOWER_COOKIE": renewed_cookie})
+        _runtime_cookie = renewed_cookie
+        await get_client()
+
+
+async def request_once(url: str) -> httpx.Response:
     current = urljoin(TOWER_BASE, url)
     client = await get_client()
     for _ in range(6):
@@ -108,6 +166,23 @@ async def request(url: str) -> httpx.Response:
             break
         current = urljoin(str(response.url), location)
     raise RuntimeError(f"Tower 资源重定向次数过多: {url}")
+
+
+async def request(url: str) -> httpx.Response:
+    stale_cookie = tower_cookie()
+    response = await request_once(url)
+    if not is_login_page(response):
+        return response
+    stale_fingerprint = hashlib.sha256(stale_cookie.encode()).hexdigest()
+    await refresh_tower_session(urljoin(TOWER_BASE, url), stale_fingerprint)
+    response = await request_once(url)
+    if is_login_page(response):
+        raise TowerSessionError(
+            "auth_expired",
+            "Tower 自动续期后仍需要登录；"
+            "请运行 specweaver configure tower --cookie",
+        )
+    return response
 
 
 def text_of(element) -> str:
@@ -153,14 +228,7 @@ def validate_tower_todo_url(url: str) -> str | None:
 
 
 def is_login_page(response: httpx.Response) -> bool:
-    path = response.url.path.lower()
-    sample = response.text[:5000].lower()
-    return (
-        "/login" in path
-        or "/sign_in" in path
-        or "登录" in response.text[:5000]
-        or "login" in sample
-    )
+    return is_login_response(response)
 
 
 def parse_comment_meta(soup: BeautifulSoup) -> dict[str, str]:
@@ -468,6 +536,8 @@ def format_todo(data: dict) -> str:
 
 
 def tool_error(error: Exception) -> str:
+    if isinstance(error, TowerSessionError):
+        return f"错误: {error}"
     if isinstance(error, httpx.HTTPStatusError):
         if error.response.status_code in {401, 403}:
             return "错误: Tower 认证信息已失效或无访问权限"
@@ -488,6 +558,12 @@ async def tower_check_auth(url: str = TOWER_BASE) -> dict[str, str]:
             return {"status": "invalid_input", "platform": "tower", "message": url_error}
     try:
         response = await request(url)
+    except TowerSessionError as error:
+        return {
+            "status": error.status,
+            "platform": "tower",
+            "message": str(error),
+        }
     except httpx.HTTPStatusError as error:
         status = "auth_expired" if error.response.status_code == 401 else "forbidden" if error.response.status_code == 403 else "network_error"
         return {"status": status, "platform": "tower", "message": f"Tower 返回 HTTP {error.response.status_code}"}

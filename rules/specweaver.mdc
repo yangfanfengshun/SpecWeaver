@@ -13,7 +13,7 @@ SpecWeaver 通过内置 Skills 和 MCP 读取 Tower、Eolink 与可选的蓝湖�
 
 安装插件和配置数据源认证是两个独立阶段：
 
-1. 通过统一安装器准备公共 runtime、`specweaver` 终端命令和认证配置；
+1. 通过统一安装器准备公共 runtime 和 `specweaver` 终端命令；
 2. 从公开 GitHub 仓库导入并安装 Cursor 插件；
 3. 重新加载 Cursor 并新建 Agent 对话；
 4. 只在手动分平台安装时，从插件根目录补装 `specweaver` 终端命令；
@@ -41,13 +41,15 @@ uv --version
 
 ## 首次安装
 
-先在普通终端安装公共 runtime、终端命令并完成一次认证配置：
+先在普通终端安装公共 runtime 和终端命令：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/install.sh | bash -s -- --cursor
 ```
 
-安装器不会绕过 Cursor 的插件确认。随后在新的 Cursor Agent 对话中执行：
+安装器优先检测 `agent`，找不到时再检测 `cursor-agent`。检测到后启动对应命令，
+进入 Cursor Agent 输入 `/plugin`，在 Marketplace 中选择 SpecWeaver 并确认安装。
+两个命令都不存在时，可在 Cursor IDE 的 Agent 对话中执行：
 
 ```text
 /add-plugin https://github.com/yangfanfengshun/SpecWeaver
@@ -70,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 
 ## 安装终端入口与首次配置
 
-推荐安装命令已经创建 `specweaver` 命令并启动配置。如果使用原有 Cursor
+推荐安装命令只创建 `specweaver` 命令，不会启动配置。如果使用原有 Cursor
 分平台安装方式，且终端还没有该命令，再在新对话中发送：
 
 ```text
@@ -84,9 +86,10 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 specweaver configure
 ```
 
-首次配置只补齐缺失项。三平台只保存认证信息，不执行联网验证；首次读取真实资源
-时再检查认证信息和访问权限。Tower、蓝湖 Cookie 和 Eolink 密码只能输入终端中的
-明文输入，不能发送到 Cursor 对话。配置可整体或按平台跳过。
+首次配置先选择本次处理的平台。Tower 输入邮箱和不回显的密码，立即验证网页登录
+并生成 Cookie；Eolink 和蓝湖只保存，首次读取真实资源时再检查权限。认证信息只能
+输入终端，不能发送到 Cursor 对话。Tower 人工恢复入口为
+`specweaver configure tower --cookie`。
 
 配置保存在 `~/.specweaver/.env`。不要读取、展示、总结该文件，也不要把它复制到
 用户项目。

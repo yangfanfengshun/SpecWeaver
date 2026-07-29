@@ -79,16 +79,18 @@ claude_plugin_installed() {
   grep -Eq '(^|[[:space:]])specweaver@specweaver([[:space:]]|$)' <<<"$output"
 }
 
-cursor_available() {
-  command -v cursor >/dev/null 2>&1 ||
-    [[ -d /Applications/Cursor.app ]] ||
-    [[ "${SPECWEAVER_ASSUME_CURSOR:-0}" == "1" ]]
+cursor_command() {
+  if command -v agent >/dev/null 2>&1; then
+    printf 'agent'
+  elif command -v cursor-agent >/dev/null 2>&1; then
+    printf 'cursor-agent'
+  fi
 }
 
 install_codex() {
   if ! command -v codex >/dev/null 2>&1; then
-    echo "Codex：未找到 codex 命令。" >&2
-    return 1
+    echo "Codex：未检测到 codex CLI，已跳过。"
+    return 0
   fi
 
   if ! codex_marketplace_exists; then
@@ -105,8 +107,8 @@ install_codex() {
 
 install_claude() {
   if ! command -v claude >/dev/null 2>&1; then
-    echo "Claude Code：未找到 claude 命令。" >&2
-    return 1
+    echo "Claude Code：未检测到 claude CLI，已跳过。"
+    return 0
   fi
 
   if ! claude_marketplace_exists; then
@@ -122,10 +124,31 @@ install_claude() {
 }
 
 print_cursor_install() {
+  local command
+  command="$(cursor_command)"
+  if [[ -n "$command" ]]; then
+    cat <<EOF
+Cursor CLI：已检测到 $command
+Cursor 插件：待人工安装
+
+请运行：
+  $command
+
+进入 Cursor Agent 后输入 /plugin，在 Marketplace 中选择 SpecWeaver 并确认安装。
+安装后重新加载 Cursor，并新建 Agent 任务验证 Skill 和 MCP。
+EOF
+    return
+  fi
   cat <<'EOF'
-Cursor：请在 Cursor Agent 中执行下面的命令，并在插件面板完成安装：
+Cursor：未检测到 agent 或 cursor-agent，已跳过 Cursor CLI 插件安装。
+
+如果你使用 Cursor IDE，请按以下步骤安装：
+1. 打开 Cursor 的 Agent 对话；
+2. 输入：
 /add-plugin https://github.com/yangfanfengshun/SpecWeaver
-安装后执行 Developer: Reload Window，并新建 Agent 任务。
+3. 在插件面板确认安装；
+4. 执行 Developer: Reload Window；
+5. 新建 Agent 任务验证 SpecWeaver Skill 和 MCP。
 EOF
 }
 
@@ -221,8 +244,12 @@ print_config_status() {
   local tower_status="缺失"
   local eolink_status="缺失"
   local lanhu_status="缺失"
-  if config_value_present TOWER_COOKIE; then
-    tower_status="已配置"
+  if config_value_present TOWER_COOKIE &&
+    config_value_present TOWER_EMAIL &&
+    config_value_present TOWER_PASSWORD; then
+    tower_status="已配置（支持自动续期）"
+  elif config_value_present TOWER_COOKIE; then
+    tower_status="已配置（仅 Cookie）"
   fi
   if config_value_present EOLINK_BASE_URL &&
     config_value_present EOLINK_USER &&
@@ -262,10 +289,12 @@ command_status() {
   else
     echo "Claude Code：未安装"
   fi
-  if cursor_available; then
-    echo "Cursor：请在插件面板确认当前版本"
+  local cursor_cli
+  cursor_cli="$(cursor_command)"
+  if [[ -n "$cursor_cli" ]]; then
+    echo "Cursor CLI：${cursor_cli}；插件状态：待人工确认"
   else
-    echo "Cursor：未检测到"
+    echo "Cursor CLI：未检测到 agent 或 cursor-agent"
   fi
 }
 
@@ -274,7 +303,6 @@ parse_host_options() {
   SELECT_CLAUDE=false
   SELECT_CURSOR=false
   HOST_WAS_SELECTED=false
-  NO_CONFIGURE=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -291,7 +319,7 @@ parse_host_options() {
         HOST_WAS_SELECTED=true
         ;;
       --no-configure)
-        NO_CONFIGURE=true
+        # 安装和配置默认分离；保留参数只为兼容旧命令。
         ;;
       --all)
         SELECT_CODEX=true
@@ -308,39 +336,28 @@ parse_host_options() {
   done
 }
 
-select_detected_hosts() {
+select_default_hosts() {
   if [[ "$HOST_WAS_SELECTED" == true ]]; then
     return
   fi
-  if command -v codex >/dev/null 2>&1; then
-    SELECT_CODEX=true
-  fi
-  if command -v claude >/dev/null 2>&1; then
-    SELECT_CLAUDE=true
-  fi
-  if cursor_available; then
-    SELECT_CURSOR=true
-  fi
+  SELECT_CODEX=true
+  SELECT_CLAUDE=true
+  SELECT_CURSOR=true
 }
 
 command_install() {
   parse_host_options "$@"
-  select_detected_hosts
+  select_default_hosts
 
+  install_cli
+  local failed=0
   local uv_bin
   uv_bin="$(find_uv)"
   if [[ -z "$uv_bin" ]]; then
     echo "未找到 uv，请先安装：https://docs.astral.sh/uv/getting-started/installation/" >&2
-    return 127
-  fi
-  if [[ "$SELECT_CODEX" == false && "$SELECT_CLAUDE" == false &&
-    "$SELECT_CURSOR" == false ]]; then
-    echo "没有检测到 Codex、Claude Code 或 Cursor。" >&2
-    return 1
+    failed=1
   fi
 
-  install_cli
-  local failed=0
   if [[ "$SELECT_CODEX" == true ]] && ! install_codex; then
     failed=1
   fi
@@ -351,13 +368,22 @@ command_install() {
     print_cursor_install
   fi
 
-  if [[ "$NO_CONFIGURE" == false ]]; then
-    run_configure configure || failed=1
-  else
-    echo "已跳过认证配置；稍后运行：specweaver configure"
-  fi
+  cat <<'EOF'
 
-  echo "安装流程完成。Codex 请新建任务；Claude Code 请执行 /reload-plugins。"
+SpecWeaver 安装流程已结束，认证配置尚未开始。
+请在普通终端运行：
+  specweaver configure
+
+也可以只配置一个平台：
+  specweaver configure tower
+  specweaver configure eolink
+  specweaver configure lanhu
+
+加载提示：
+- Codex：新建任务。
+- Claude Code：执行 /reload-plugins，再用 /mcp 检查服务。
+- Cursor：完成原生插件安装后重新加载，并新建任务。
+EOF
   return "$failed"
 }
 
@@ -398,7 +424,7 @@ command_update() {
     if command -v claude >/dev/null 2>&1 && claude_plugin_installed; then
       SELECT_CLAUDE=true
     fi
-    if cursor_available; then
+    if [[ -n "$(cursor_command)" ]]; then
       SELECT_CURSOR=true
     fi
   fi
@@ -414,9 +440,7 @@ command_update() {
     print_cursor_update
   fi
   install_cli
-  if [[ "$NO_CONFIGURE" == false ]]; then
-    run_configure configure || failed=1
-  fi
+  echo "认证配置保持不变；如需更新，请运行：specweaver configure"
   command_status
   return "$failed"
 }
@@ -424,24 +448,34 @@ command_update() {
 print_help() {
   cat <<'EOF'
 用法：
-  specweaver install [--codex] [--claude] [--cursor] [--no-configure]
-  specweaver update [--codex] [--claude] [--cursor] [--no-configure]
+  specweaver install [--codex] [--claude] [--cursor] [--all]
+  specweaver update [--codex] [--claude] [--cursor] [--all]
   specweaver status
-  specweaver configure [tower|eolink|lanhu]
+  specweaver configure [tower|eolink|lanhu] [--non-interactive]
+  specweaver configure tower --cookie
   specweaver check [tower|eolink|lanhu]
 
-不指定宿主时，install 处理本机检测到的宿主，update 处理已安装的宿主。
-Cursor 的安装、更新和卸载仍需要在 Cursor 原生插件界面确认。
+install 不指定宿主时默认处理 Codex、Claude Code 和 Cursor；缺少某个宿主 CLI
+只跳过该宿主，不影响其他安装结果。安装和配置相互独立，安装后手动运行
+specweaver configure。Cursor 插件仍需在原生界面确认。
 EOF
 }
 
 case "${1:-}" in
   install)
     shift
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+      print_help
+      exit 0
+    fi
     command_install "$@"
     ;;
   update)
     shift
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+      print_help
+      exit 0
+    fi
     command_update "$@"
     ;;
   status)

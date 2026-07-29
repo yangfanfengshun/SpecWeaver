@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import hashlib
 import os
 from pathlib import Path
 import readline
+import sys
 import tempfile
 from urllib.parse import parse_qs, urlparse
 
@@ -20,7 +22,18 @@ from dotenv import dotenv_values
 import httpx
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
+from tower_auth import (
+    TowerLoginError,
+    cookies_from_header,
+    is_login_response,
+    login_tower,
+)
+
+
 CONFIG_KEYS = (
+    "TOWER_EMAIL",
+    "TOWER_PASSWORD",
     "TOWER_COOKIE",
     "EOLINK_BASE_URL",
     "EOLINK_USER",
@@ -28,9 +41,8 @@ CONFIG_KEYS = (
     "LANHU_ENABLED",
     "LANHU_COOKIE",
 )
-SECRET_KEYS = {"TOWER_COOKIE", "EOLINK_PASSWORD", "LANHU_COOKIE"}
 PLATFORMS = ("tower", "eolink", "lanhu")
-CONFIGURE_DEFERRED_PLATFORMS = frozenset(PLATFORMS)
+CONFIGURE_DEFERRED_PLATFORMS = frozenset(("eolink", "lanhu"))
 PLATFORM_LABELS = {
     "tower": "Tower",
     "eolink": "Eolink",
@@ -105,18 +117,18 @@ def platform_is_complete(platform: str, values: dict[str, str]) -> bool:
     raise ValueError(f"未知平台: {platform}")
 
 
-def missing_platforms(values: dict[str, str]) -> list[str]:
-    return [
-        platform
-        for platform in PLATFORMS
-        if not platform_is_complete(platform, values)
-    ]
-
-
-def required_keys(platforms: list[str], values: dict[str, str]) -> list[str]:
+def required_keys(
+    platforms: list[str],
+    values: dict[str, str],
+    *,
+    tower_cookie_only: bool = False,
+) -> list[str]:
     required: list[str] = []
     if "tower" in platforms:
-        required.append("TOWER_COOKIE")
+        if tower_cookie_only:
+            required.append("TOWER_COOKIE")
+        else:
+            required.extend(("TOWER_EMAIL", "TOWER_PASSWORD"))
     if "eolink" in platforms:
         required.extend(("EOLINK_BASE_URL", "EOLINK_USER", "EOLINK_PASSWORD"))
     if "lanhu" in platforms:
@@ -127,7 +139,10 @@ def required_keys(platforms: list[str], values: dict[str, str]) -> list[str]:
 
 
 def merged_non_interactive(
-    existing: dict[str, str], platforms: list[str] | None = None
+    existing: dict[str, str],
+    platforms: list[str] | None = None,
+    *,
+    tower_cookie_only: bool = False,
 ) -> dict[str, str]:
     values = dict(existing)
     for key in CONFIG_KEYS:
@@ -137,7 +152,13 @@ def merged_non_interactive(
         values["LANHU_ENABLED"] = "true"
     targets = platforms or list(PLATFORMS)
     missing = [
-        key for key in required_keys(targets, values) if not values[key].strip()
+        key
+        for key in required_keys(
+            targets,
+            values,
+            tower_cookie_only=tower_cookie_only,
+        )
+        if not values[key].strip()
     ]
     if missing:
         raise ValueError(f"非交互模式缺少必要配置: {', '.join(missing)}")
@@ -166,146 +187,210 @@ def prompt_value(
     return result
 
 
-def prompt_configure(label: str) -> bool:
-    answer = input(f"是否现在配置{label}？[Y/s]: ").strip().lower()
-    if not answer or answer in {"y", "yes"}:
-        return True
-    if answer in {"s", "skip", "n", "no"}:
-        return False
-    print("请输入 y 或 s。")
-    return prompt_configure(label)
+def prompt_password(label: str, current: str) -> str:
+    status = "已配置" if current else "未配置"
+    hint = "回车保留当前值" if current else "回车跳过该平台"
+    value = getpass.getpass(
+        f"{label}（{status}，输入不回显，{hint}）: "
+    )
+    result = value or current
+    if not result:
+        raise SkipPlatform
+    return result
 
 
-def prompt_enabled(current: str) -> str:
-    default = parse_enabled(current or "true")
-    suffix = "Y/n" if default else "y/N"
-    answer = input(
-        "是否启用蓝湖设计稿能力？前端、客户端和产品通常需要，后端可关闭 "
-        f"[{suffix}]: "
-    ).strip().lower()
-    if not answer:
-        return "true" if default else "false"
-    if answer in {"y", "yes"}:
-        return "true"
-    if answer in {"n", "no"}:
-        return "false"
-    print("请输入 y 或 n。")
-    return prompt_enabled(current)
+def select_platforms() -> list[str]:
+    while True:
+        print(
+            "\n请选择需要配置的平台，可多选：\n\n"
+            "1. Tower\n"
+            "2. Eolink\n"
+            "3. 蓝湖\n"
+            "4. 全部\n"
+            "5. 退出\n"
+        )
+        answer = input("请输入编号，多个用逗号分隔，例如：1,3\n> ").strip()
+        parts = [part.strip() for part in answer.replace("，", ",").split(",")]
+        if not answer or any(not part for part in parts):
+            print("请输入 1-5 的编号。")
+            continue
+        if any(part not in {"1", "2", "3", "4", "5"} for part in parts):
+            print("存在无效编号，请重新选择。")
+            continue
+        if len(parts) != len(set(parts)):
+            print("编号不能重复，请重新选择。")
+            continue
+        if "4" in parts and len(parts) > 1:
+            print("“全部”不能和其他编号同时选择。")
+            continue
+        if "5" in parts and len(parts) > 1:
+            print("“退出”不能和其他编号同时选择。")
+            continue
+        if parts == ["4"]:
+            return list(PLATFORMS)
+        if parts == ["5"]:
+            return []
+        mapping = {"1": "tower", "2": "eolink", "3": "lanhu"}
+        return [mapping[part] for part in parts]
+
+
+def prompt_lanhu_action() -> str:
+    while True:
+        answer = input(
+            "1. 启用或更新蓝湖\n"
+            "2. 停用蓝湖\n"
+            "3. 返回\n"
+            "> "
+        ).strip()
+        if answer in {"1", "2", "3"}:
+            return answer
+        print("请输入 1、2 或 3。")
 
 
 def collect_interactive(
     existing: dict[str, str],
     platforms: list[str],
     *,
-    only_missing: bool,
+    tower_cookie_only: bool = False,
 ) -> tuple[dict[str, str], list[str]]:
     values = dict(existing)
     skipped: list[str] = []
     if "tower" in platforms:
         print("\n配置 Tower")
         print("用于读取任务、下载附件和按明确授权发布评论。")
-        if not prompt_configure(" Tower"):
+        previous = {
+            key: values[key]
+            for key in ("TOWER_EMAIL", "TOWER_PASSWORD", "TOWER_COOKIE")
+        }
+        try:
+            if tower_cookie_only:
+                values["TOWER_COOKIE"] = prompt_value(
+                    "TOWER_COOKIE",
+                    "Tower Cookie",
+                    values["TOWER_COOKIE"],
+                    secret=True,
+                )
+            else:
+                values["TOWER_EMAIL"] = prompt_value(
+                    "TOWER_EMAIL",
+                    "Tower 登录邮箱",
+                    values["TOWER_EMAIL"],
+                )
+                values["TOWER_PASSWORD"] = prompt_password(
+                    "Tower 登录密码",
+                    values["TOWER_PASSWORD"],
+                )
+        except SkipPlatform:
+            values.update(previous)
             skipped.append("tower")
-        else:
-            previous = values["TOWER_COOKIE"]
-            try:
-                if not only_missing or not values["TOWER_COOKIE"]:
-                    values["TOWER_COOKIE"] = prompt_value(
-                        "TOWER_COOKIE",
-                        "Tower Cookie",
-                        values["TOWER_COOKIE"],
-                        secret=True,
-                    )
-            except SkipPlatform:
-                values["TOWER_COOKIE"] = previous
-                skipped.append("tower")
 
     if "eolink" in platforms:
         print("\n配置 Eolink")
         print("用于读取项目、接口列表和接口详情。")
-        if not prompt_configure(" Eolink"):
+        previous = {
+            key: values[key]
+            for key in ("EOLINK_BASE_URL", "EOLINK_USER", "EOLINK_PASSWORD")
+        }
+        try:
+            values["EOLINK_BASE_URL"] = prompt_value(
+                "EOLINK_BASE_URL",
+                "Eolink 根地址",
+                values["EOLINK_BASE_URL"],
+            ).rstrip("/")
+            values["EOLINK_USER"] = prompt_value(
+                "EOLINK_USER", "Eolink 账号", values["EOLINK_USER"]
+            )
+            values["EOLINK_PASSWORD"] = prompt_password(
+                "Eolink 密码",
+                values["EOLINK_PASSWORD"],
+            )
+        except SkipPlatform:
+            values.update(previous)
             skipped.append("eolink")
-        else:
-            previous = {
-                key: values[key]
-                for key in ("EOLINK_BASE_URL", "EOLINK_USER", "EOLINK_PASSWORD")
-            }
-            try:
-                if not only_missing or not values["EOLINK_BASE_URL"]:
-                    values["EOLINK_BASE_URL"] = prompt_value(
-                        "EOLINK_BASE_URL",
-                        "Eolink 根地址",
-                        values["EOLINK_BASE_URL"],
-                    ).rstrip("/")
-                if not only_missing or not values["EOLINK_USER"]:
-                    values["EOLINK_USER"] = prompt_value(
-                        "EOLINK_USER", "Eolink 账号", values["EOLINK_USER"]
-                    )
-                if not only_missing or not values["EOLINK_PASSWORD"]:
-                    values["EOLINK_PASSWORD"] = prompt_value(
-                        "EOLINK_PASSWORD",
-                        "Eolink 密码",
-                        values["EOLINK_PASSWORD"],
-                        secret=True,
-                    )
-            except SkipPlatform:
-                values.update(previous)
-                skipped.append("eolink")
 
     if "lanhu" in platforms:
         print("\n配置蓝湖")
-        if not prompt_configure("蓝湖"):
+        action = prompt_lanhu_action()
+        if action == "3":
             skipped.append("lanhu")
+        elif action == "2":
+            values["LANHU_ENABLED"] = "false"
         else:
             previous = {
                 key: values[key] for key in ("LANHU_ENABLED", "LANHU_COOKIE")
             }
             try:
-                should_prompt_enabled = (
-                    not only_missing
-                    or not values["LANHU_ENABLED"]
-                    or values["LANHU_ENABLED"].strip().lower() not in {"true", "false"}
+                values["LANHU_ENABLED"] = "true"
+                values["LANHU_COOKIE"] = prompt_value(
+                    "LANHU_COOKIE",
+                    "蓝湖 Cookie",
+                    values["LANHU_COOKIE"],
+                    secret=True,
                 )
-                if should_prompt_enabled:
-                    current_enabled = values["LANHU_ENABLED"].strip().lower()
-                    if current_enabled not in {"true", "false"}:
-                        current_enabled = "true"
-                    values["LANHU_ENABLED"] = prompt_enabled(current_enabled)
-                if parse_enabled(values["LANHU_ENABLED"]):
-                    if not only_missing or not values["LANHU_COOKIE"]:
-                        values["LANHU_COOKIE"] = prompt_value(
-                            "LANHU_COOKIE",
-                            "蓝湖 Cookie",
-                            values["LANHU_COOKIE"],
-                            secret=True,
-                        )
-                    print(
-                        "蓝湖项目权限将在首次读取真实设计稿时验证，"
-                        "无需在安装时提供链接。"
-                    )
+                print(
+                    "蓝湖项目权限将在首次读取真实设计稿时验证，"
+                    "无需在安装时提供链接。"
+                )
             except SkipPlatform:
                 values.update(previous)
                 skipped.append("lanhu")
     return values, skipped
 
 
-def validate_tower(cookie: str) -> tuple[str, str]:
+def authenticate_tower(values: dict[str, str]) -> tuple[str, str]:
     try:
-        response = httpx.get(
-            "https://tower.im/launchpad/",
-            headers={"Cookie": cookie, "User-Agent": "Mozilla/5.0"},
+        values["TOWER_COOKIE"] = login_tower(
+            values["TOWER_EMAIL"],
+            values["TOWER_PASSWORD"],
+        )
+        return (
+            "success",
+            "Tower 登录验证成功；已保存邮箱、密码和登录 Cookie",
+        )
+    except TowerLoginError as error:
+        if error.kind == "credentials":
+            return (
+                "failed",
+                "Tower 登录失败：邮箱或密码错误；本次配置未保存",
+            )
+        if error.kind == "verification":
+            return (
+                "failed",
+                "Tower 要求验证码或二次验证；请使用 "
+                "specweaver configure tower --cookie",
+            )
+        if error.kind == "network":
+            return (
+                "failed",
+                "Tower 登录暂时无法验证；本次配置未保存",
+            )
+        return (
+            "failed",
+            "Tower 网页登录流程暂时不可用；请使用 "
+            "specweaver configure tower --cookie",
+        )
+
+
+def validate_tower(
+    cookie: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> tuple[str, str]:
+    try:
+        with httpx.Client(
+            cookies=cookies_from_header(cookie),
+            headers={"User-Agent": "Mozilla/5.0"},
             timeout=20,
             follow_redirects=True,
-        )
+            transport=transport,
+        ) as client:
+            response = client.get("https://tower.im/launchpad/")
         response.raise_for_status()
-        sample = response.text[:5000].lower()
-        if (
-            "/login" in response.url.path.lower()
-            or "登录" in response.text[:5000]
-            or "login" in sample
-        ):
+        if is_login_response(response):
             return "failed", "Tower Cookie 已失效"
         return "success", "Tower 认证有效"
+    except ValueError as error:
+        return "failed", str(error)
     except httpx.HTTPError as error:
         return "failed", f"Tower 连接失败: {error.__class__.__name__}"
 
@@ -454,38 +539,6 @@ def print_summary(path: Path, results: dict[str, tuple[str, str]]) -> None:
         print(f"- {platform}: {status} · {message}")
 
 
-def validate_with_skips(
-    values: dict[str, str],
-    platforms: list[str],
-    skipped: list[str],
-    lanhu_check_url: str = "",
-    deferred_platforms: frozenset[str] = frozenset(),
-) -> dict[str, tuple[str, str]]:
-    results: dict[str, tuple[str, str]] = {}
-    for platform in platforms:
-        label = PLATFORM_LABELS[platform]
-        if platform in skipped:
-            results[label] = ("skipped", "已跳过，可稍后配置")
-        else:
-            results.update(
-                validate_platforms(
-                    values,
-                    [platform],
-                    lanhu_check_url,
-                    deferred_platforms,
-                )
-            )
-    return results
-
-
-def print_deferred(platforms: list[str]) -> None:
-    if len(platforms) == len(PLATFORMS):
-        print("已跳过认证配置；稍后运行：specweaver configure")
-        return
-    commands = "、".join(f"specweaver configure {platform}" for platform in platforms)
-    print(f"已跳过配置；稍后运行：{commands}")
-
-
 def print_existing_status(path: Path, values: dict[str, str]) -> None:
     print(f"已保留现有认证配置：{path}")
     tower_status = "已配置" if values["TOWER_COOKIE"] else "未配置"
@@ -540,7 +593,58 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="check lanhu 时可选：检查指定项目权限，不会保存链接",
     )
+    parser.add_argument(
+        "--cookie",
+        action="store_true",
+        help="Tower 人工 Cookie 恢复入口，仅用于 configure tower",
+    )
     return parser.parse_args()
+
+
+def build_configure_results(
+    values: dict[str, str],
+    existing: dict[str, str],
+    platforms: list[str],
+    skipped: list[str],
+    *,
+    tower_cookie_only: bool,
+) -> tuple[dict[str, tuple[str, str]], list[str]]:
+    results: dict[str, tuple[str, str]] = {}
+    saved: list[str] = []
+    for platform in platforms:
+        label = PLATFORM_LABELS[platform]
+        if platform in skipped:
+            results[label] = ("skipped", "已返回，原配置保持不变")
+            continue
+        if platform == "tower" and not tower_cookie_only:
+            result = authenticate_tower(values)
+            results["Tower"] = result
+            if result[0] == "failed":
+                for key in ("TOWER_EMAIL", "TOWER_PASSWORD", "TOWER_COOKIE"):
+                    values[key] = existing[key]
+                continue
+            saved.append(platform)
+            continue
+        if platform == "tower":
+            if values["TOWER_COOKIE"].strip():
+                results["Tower"] = (
+                    "configured",
+                    "Tower Cookie 已保存；将在首次使用时验证",
+                )
+                saved.append(platform)
+            else:
+                results["Tower"] = ("failed", "未配置 Tower Cookie")
+            continue
+        results.update(
+            validate_platforms(
+                values,
+                [platform],
+                deferred_platforms=CONFIGURE_DEFERRED_PLATFORMS,
+            )
+        )
+        if results[label][0] != "failed":
+            saved.append(platform)
+    return results, saved
 
 
 def main() -> int:
@@ -550,6 +654,10 @@ def main() -> int:
     command = args.command
     if args.legacy_configure or args.non_interactive:
         command = command or "configure"
+
+    if args.cookie and not (command == "configure" and args.platform == "tower"):
+        print("错误: --cookie 仅支持 specweaver configure tower --cookie")
+        return 2
 
     if path.is_file() and command is None:
         print_existing_status(path, existing)
@@ -568,16 +676,23 @@ def main() -> int:
     if args.non_interactive:
         platforms = [args.platform] if args.platform else list(PLATFORMS)
         try:
-            values = merged_non_interactive(existing, platforms)
+            values = merged_non_interactive(
+                existing,
+                platforms,
+                tower_cookie_only=args.cookie,
+            )
         except ValueError as error:
             print(f"错误: {error}")
             return 2
-        results = validate_platforms(
+        results, saved = build_configure_results(
             values,
+            existing,
             platforms,
-            deferred_platforms=CONFIGURE_DEFERRED_PLATFORMS,
+            [],
+            tower_cookie_only=args.cookie,
         )
-        write_config_atomic(path, values)
+        if saved:
+            write_config_atomic(path, values)
         print_summary(path, results)
         failed = [name for name, (status, _) in results.items() if status == "failed"]
         if failed:
@@ -585,58 +700,31 @@ def main() -> int:
             return 1
         return 0
 
-    values = existing
-    platforms = [args.platform] if args.platform else missing_platforms(values)
+    platforms = [args.platform] if args.platform else select_platforms()
     if not platforms:
-        print_existing_status(path, values)
-        print(
-            "没有缺失配置；如需更新单个平台，请运行 "
-            "specweaver configure tower、eolink 或 lanhu。"
-        )
+        print("已退出，未修改任何配置。")
         return 0
 
-    only_missing = args.platform is None
-    if args.platform is None and not prompt_configure("认证信息"):
-        print_deferred(platforms)
-        return 0
-
-    while True:
-        values, skipped = collect_interactive(
-            values,
-            platforms,
-            only_missing=only_missing,
-        )
-        active_platforms = [
-            platform for platform in platforms if platform not in skipped
-        ]
-        results = validate_with_skips(
-            values,
-            platforms,
-            skipped,
-            args.lanhu_url,
-            CONFIGURE_DEFERRED_PLATFORMS,
-        )
-        if active_platforms:
-            write_config_atomic(path, values)
-        print_summary(path, results)
-        failed = [name for name, (status, _) in results.items() if status == "failed"]
-        if not failed:
-            if skipped:
-                print_deferred(skipped)
-            return 0
+    values, skipped = collect_interactive(
+        existing,
+        platforms,
+        tower_cookie_only=args.cookie,
+    )
+    results, saved = build_configure_results(
+        values,
+        existing,
+        platforms,
+        skipped,
+        tower_cookie_only=args.cookie,
+    )
+    if saved:
+        write_config_atomic(path, values)
+    print_summary(path, results)
+    failed = [name for name, (status, _) in results.items() if status == "failed"]
+    if failed:
         print(f"认证验证未全部通过: {', '.join(failed)}")
-        answer = input("是否立即重新填写并验证？[Y/n]: ").strip().lower()
-        if answer not in {"n", "no"}:
-            platforms = [
-                platform
-                for platform in platforms
-                if PLATFORM_LABELS[platform] in failed
-            ]
-            only_missing = False
-            continue
-        suffix = f" {args.platform}" if args.platform else ""
-        print(f"已保留当前配置，可稍后运行 specweaver configure{suffix}。")
         return 1
+    return 0
 
 
 if __name__ == "__main__":

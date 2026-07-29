@@ -1,31 +1,32 @@
 ---
 name: configure-specweaver
-description: 安全配置或重新配置 SpecWeaver 的 Tower、Eolink 和蓝湖认证信息，并执行连接检查。用户要求安装后初始化、配置 SpecWeaver、只更新某个平台的 Cookie 或密码、检查数据源认证、运行 specweaver configure 时使用。
+description: 安全配置或重新配置 SpecWeaver 的 Tower、Eolink 和蓝湖认证信息，并执行连接检查。用户要求安装后初始化、配置 SpecWeaver、更新 Tower 邮箱密码或 Cookie、只更新某个平台、检查数据源认证、运行 specweaver configure 时使用。
 ---
 
 # 配置 SpecWeaver
 
 ## 目标
 
-从当前已安装插件的缓存目录提供终端配置命令。首次配置只补齐缺失项；认证失效时只更新受影响的平台。不得要求用户克隆源码，也不得读取、打印或复述已有密钥。
+从当前已安装插件的缓存目录提供终端配置命令。安装和配置是独立阶段；认证失效时只更新受影响的平台。不得要求用户克隆源码，也不得读取、打印或复述已有密钥。
 
 ## 执行
 
 1. Claude Code 使用 `${CLAUDE_PLUGIN_ROOT}`，Cursor 使用 `${CURSOR_PLUGIN_ROOT}`；Codex 以当前 Skill 的已安装路径为基准向上两级解析插件根目录。不得使用用户业务仓库中的同名相对路径。
 2. 如果终端还没有 `specweaver` 命令，从插件根目录运行 `scripts/setup.sh --install-cli` 安装入口；不得让用户手工修改插件缓存。
-3. 首次配置运行 `specweaver configure`，只补齐缺失项。
+3. 首次配置运行 `specweaver configure`，让用户在终端多选本次要处理的平台。
 4. 已知失效平台时只运行对应命令：`specweaver configure tower`、`specweaver configure eolink` 或 `specweaver configure lanhu`。不得让用户重填其他平台。
 5. 仅检查连接时运行 `specweaver check`；也可以在末尾加平台名，只检查一个平台。
-6. 让用户直接在终端向导中明文输入 Cookie、账号和密码；不要让用户把密钥发送到对话中。
-7. 用户可以整体或按平台跳过配置；跳过时保留已有值、不执行该平台验证，并提示稍后使用的配置命令。
-8. 三个平台在配置时只保存认证信息，不联网验证；实际使用时验证，失效则提示用户重新配置。
-9. 按终端汇总说明成功、已关闭、已配置待首次使用验证、已跳过或失败的平台。验证失败时只重试失败平台。
+6. 让用户直接在终端向导中输入认证信息；密码不回显，不要让用户把密钥发送到对话中。
+7. Tower 普通配置输入邮箱密码，立即执行一次网页登录并生成 Cookie；失败不得覆盖旧配置，也不得自动重复提交密码。
+8. Tower 要求验证码、二次验证或网页流程不兼容时，提示 `specweaver configure tower --cookie`，该入口只保存 Cookie、后验证。
+9. Eolink 和蓝湖配置只保存认证信息，不联网验证；实际使用时验证。
+10. 未选择、返回或退出时保留已有值。按终端汇总说明成功、已关闭、已配置待首次使用验证、已返回或失败的平台。
 
-三平台认证信息保存后标记为“已配置，待首次使用验证”；首次处理真实资源时，再由对应 MCP 检查认证信息和访问权限。
+Tower 成功状态必须是“登录验证成功”；Eolink 和蓝湖保存后标记为“已配置，待首次使用验证”。
 
 ## 非交互模式
 
-仅当用户明确要求自动化配置，并且必要环境变量已在终端环境中准备好时，运行 `specweaver configure --non-interactive`。可以在命令末尾指定单个平台；未指定时保存全部已启用平台。三平台都延迟到首次使用时验证。
+仅当用户明确要求自动化配置，并且必要环境变量已在终端环境中准备好时，运行 `specweaver configure --non-interactive`。Tower 普通模式需要 `TOWER_EMAIL` 和 `TOWER_PASSWORD` 并执行一次真实登录；Cookie 兜底使用 `specweaver configure tower --cookie --non-interactive` 和 `TOWER_COOKIE`。Eolink、蓝湖仍延迟到首次使用时验证。
 
 ## 安全边界
 

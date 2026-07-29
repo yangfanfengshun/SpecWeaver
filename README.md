@@ -22,7 +22,7 @@
 - Git；
 - Python 3.10～3.13；
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)；
-- Codex、Claude Code 或 Cursor 之一；
+- Codex CLI、Claude Code CLI 或 Cursor CLI/IDE 之一；
 - 可访问 Tower、Eolink，以及启用设计能力时的蓝湖。
 
 MCP 依赖由 `uv` 根据入口脚本声明准备，插件目录不维护 `.venv`。
@@ -36,13 +36,14 @@ MCP 依赖由 `uv` 根据入口脚本声明准备，插件目录不维护 `.venv
 
 - 确认终端可以执行 `git --version` 和 `uv --version`；
 - 确认可以访问 GitHub；插件从公开发布仓库安装，不需要私有开发仓库权限；
-- 在浏览器中登录需要使用的 Tower 和蓝湖账号；
+- 准备 Tower 登录邮箱和密码；
+- 在浏览器中登录需要使用的蓝湖账号；
 - 准备 Eolink 根地址、登录账号和密码。
 
-Tower 和蓝湖的 Cookie 获取方式：
+蓝湖 Cookie 的获取方式：
 
 1. 打开浏览器开发者工具的 Network 面板；
-2. 刷新 Tower 或蓝湖页面；
+2. 刷新蓝湖页面；
 3. 选择一个发往对应域名的请求；
 4. 从 Request Headers 中复制完整的 Cookie；
 5. Cookie 只粘贴到后续的终端配置向导，不要发送到 Agent 对话中。
@@ -57,9 +58,16 @@ curl -fsSL \
   bash
 ```
 
-安装器会把公开发布仓库克隆到 `~/.specweaver/runtime`，检测本机的 Codex、
-Claude Code 和 Cursor，复用已存在的安装，并只运行一次认证配置。它不会创建
-第二套 Codex 或 Claude Code 插件，也不会修改插件缓存中的源码。
+安装器会把公开发布仓库克隆到 `~/.specweaver/runtime`，安装公共
+`specweaver` 命令，并默认依次处理 Codex、Claude Code 和 Cursor。宿主只检测
+`codex`、`claude`、`agent` / `cursor-agent` CLI，不根据桌面 App 猜测状态；
+缺少某个 CLI 时只跳过该宿主，不影响其他宿主和后续配置。
+
+安装和认证配置完全分离。安装器不会自动进入配置向导，结束时会明确提示：
+
+```bash
+specweaver configure
+```
 
 只处理指定宿主时，将参数传给安装器：
 
@@ -73,8 +81,12 @@ curl -fsSL \
 安装入口位于 `~/.local/bin/specweaver`；如果该目录不在 `PATH` 中，安装器会
 明确提示。
 
-Cursor 当前没有经过验证的非交互式插件安装命令。检测到 Cursor 或显式指定
-`--cursor` 时，安装器会完成公共终端入口与认证配置，再提示在 Cursor Agent 中执行：
+Cursor 当前没有经过验证的非交互式插件安装命令。安装器优先检测 `agent`，找不到
+时再检测 `cursor-agent`。检测到 CLI 后，启动该命令并在 Cursor Agent 中输入
+`/plugin`，从 Marketplace 选择 SpecWeaver；不会执行不存在的 `agent plugin ...`
+命令。
+
+未检测到 Cursor CLI 时，仍可在 Cursor IDE 的 Agent 对话中执行：
 
 ```text
 /add-plugin https://github.com/yangfanfengshun/SpecWeaver
@@ -96,27 +108,33 @@ bash specweaver-install.sh
 
 ### 3. 首次配置
 
-推荐安装命令已经自动启动配置向导。主动跳过或非交互环境安装后，可以补充运行：
+安装完成后，在普通终端主动启动配置：
 
 ```bash
 specweaver configure
 ```
 
-首次配置只询问缺失项：
+不带平台名时先选择本次需要配置的平台，可输入 `1,3` 等多选组合：
 
-1. Tower Cookie；
+1. Tower；
 2. Eolink 根地址、账号和密码；
-3. 是否启用蓝湖设计稿能力；
-4. 启用蓝湖时填写蓝湖 Cookie。
+3. 蓝湖；
+4. 全部；
+5. 退出。
 
-安装和配置只保存三个平台的认证信息，不执行联网验证。保存后会显示“已配置，待
-首次使用验证”；第一次读取真实数据时，再检查认证信息和对应资源的访问权限。
+选中后不再逐个平台询问“是否配置”。Tower 普通流程输入邮箱和不回显的密码，
+立即执行一次真实网页登录；成功后保存邮箱、密码和生成的 Cookie，失败时不覆盖
+旧配置。Eolink 和蓝湖继续只保存，第一次读取真实数据时再检查访问权限。
 
-Cookie 和密码采用终端明文输入，方便用户核对。配置向导支持整体或按平台跳过，
-跳过不会清空已有值，也不会执行该平台的连接验证；稍后可运行
-`specweaver configure` 或指定平台继续配置。三个平台都在首次使用时验证；认证
-失效时只重新填写失败的平台。需要主动检查连接时运行 `specweaver check` 或指定
-平台。
+Tower 密码和 Eolink 密码输入不回显；Cookie 只输入终端，不能发送到 Agent 对话。
+蓝湖入口可选择启用/更新、停用或返回。未选择某个平台只表示本次不修改，稍后仍可
+运行 `specweaver configure <platform>`。
+
+Tower 网页登录要求验证码、二次验证或兼容失败时，使用人工兜底：
+
+```bash
+specweaver configure tower --cookie
+```
 
 配置保存到：
 
@@ -157,8 +175,10 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
+~/.codex/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
 ```
+
+安装后另行运行 `specweaver configure`。
 
 Codex 的更新、重新安装、新任务加载和故障处理规则见
 [`AGENTS.md`](./AGENTS.md)。
@@ -168,14 +188,17 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
 ```
 
+安装后另行运行 `specweaver configure`。Claude 插件清单已声明三个 MCP server，
+无需手工编辑 `settings.json`；安装后执行 `/reload-plugins`，再用 `/mcp` 检查。
 Claude Code 的更新、重载和故障处理规则见 [`CLAUDE.md`](./CLAUDE.md)。
 
 #### Cursor
 
-在 Cursor Agent 中执行：
+Cursor CLI 可执行 `agent`（兼容安装也可能提供 `cursor-agent`），进入后输入
+`/plugin` 并从 Marketplace 安装。Cursor IDE 也可在 Agent 对话中执行：
 
 ```text
 /add-plugin https://github.com/yangfanfengshun/SpecWeaver
@@ -235,8 +258,8 @@ specweaver check
 specweaver check tower
 ```
 
-`specweaver configure` 不带平台名时只补齐缺失项；已有配置会原样保留。更新成功后
-从原流程的失败节点重试即可。
+`specweaver configure` 不带平台名时先显示平台多选菜单，只修改选中的平台。更新
+成功后从原流程的失败节点重试即可。
 
 如需更换配置目录，请在启动客户端前设置 `SPECWEAVER_HOME`。
 
@@ -248,7 +271,9 @@ specweaver check tower
 
 | 变量 | 必需条件 | 用途 |
 | --- | --- | --- |
-| `TOWER_COOKIE` | 始终 | 读取 Tower 与按确认发布评论 |
+| `TOWER_EMAIL` | Tower 普通配置 | Tower 网页登录和 Cookie 续期 |
+| `TOWER_PASSWORD` | Tower 普通配置 | Tower 网页登录和 Cookie 续期 |
+| `TOWER_COOKIE` | `configure tower --cookie` | Tower 人工 Cookie 兜底 |
 | `EOLINK_BASE_URL` | 始终 | Eolink 站点根地址 |
 | `EOLINK_USER` | 始终 | Eolink 登录账号 |
 | `EOLINK_PASSWORD` | 始终 | Eolink 登录密码 |
@@ -295,14 +320,17 @@ Git Skill 不会自动推送、创建 PR、合并或发布。Tower 评论始终�
 检查 SpecWeaver 数据源连接
 ```
 
-Agent 会调用插件自带的配置脚本。认证值只应输入终端中的明文输入框，不应
+Agent 会调用插件自带的配置脚本。认证值只应输入终端向导，不应
 粘贴到聊天窗口。
 
 ## 认证失效
 
-当 Tower、Eolink 或蓝湖认证失效时，插件会暂停依赖该平台的步骤并提示对应的
-`specweaver configure <platform>` 命令。只更新失效平台并从失败节点重试，不需要
-重跑安装或重填其他平台。
+Tower 请求优先使用已保存 Cookie。Cookie 失效且邮箱密码可用时，同一批并发请求
+只执行一次自动登录，原子更新 Cookie，并把原始请求重试一次；密码错误、验证码、
+二次验证、网络异常或页面不兼容时停止，不会反复提交密码。
+
+Eolink 或蓝湖认证失效，以及 Tower 无法自动续期时，插件会提示对应的
+`specweaver configure <platform>` 命令。只更新失效平台，不需要重跑安装。
 
 - Tower 失效：暂停整个流程；
 - 蓝湖失效：更新后重试，或明确确认本次不采用设计稿；

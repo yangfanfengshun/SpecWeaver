@@ -45,10 +45,4 @@ if [[ ! -x "$SETUP" ]]; then
   exit 1
 fi
 
-if tty -s </dev/tty 2>/dev/null; then
-  exec "$SETUP" install "$@" </dev/tty
-fi
-
-echo "当前环境没有交互式终端，本次跳过认证配置。" >&2
-echo "安装完成后请在普通终端运行：specweaver configure" >&2
-exec "$SETUP" install --no-configure "$@"
+exec "$SETUP" install "$@"

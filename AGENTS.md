@@ -28,8 +28,8 @@ MCP 返回结果当作已经确认的需求结论。
 ## Codex 首次安装与日常维护
 
 当用户要求在 Codex 中安装 SpecWeaver 时，按“环境检查 → 添加 marketplace →
-安装插件 → 终端配置 → 新任务加载 → 首次使用验证”的顺序处理。安装与配置应在
-同一个终端流程中完成，不能把插件已经下载描述成数据源已经可用。
+安装插件 → 提示独立配置命令 → 新任务加载 → 首次使用验证”的顺序处理。安装与
+配置是两个独立阶段，不能把插件已经下载描述成数据源已经可用。
 
 ### 1. 安装前检查
 
@@ -47,7 +47,7 @@ uv --version
 若 `uv` 不存在，先引导用户按官方方式安装并重新打开终端。不要通过修改插件缓存、
 伪造可执行文件或跳过 MCP 依赖来绕过检查。
 
-### 2. 首次安装并配置
+### 2. 首次安装
 
 Codex 用户推荐在普通终端执行一条命令：
 
@@ -56,8 +56,8 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```
 
 该命令安装或复用 Codex 中的 `specweaver@specweaver`，将公共终端入口指向
-`~/.specweaver/runtime`，并立即补齐缺失配置。Cookie 和密码通过终端明文输入，
-不能发送到 Codex 对话。配置保存在 `~/.specweaver/.env`。
+`~/.specweaver/runtime`，但不会自动进入认证配置。安装结束后在普通终端运行
+`specweaver configure`。
 
 用户明确要求同时安装本机已存在的多个 AI 宿主时，省略 `--codex`：
 
@@ -70,19 +70,20 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
+~/.codex/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
-`setup.sh --configure` 会安装 `specweaver` 终端入口并立即补齐缺失配置。插件升级
-时使用新版本号对应的缓存路径。
+`setup.sh --install-cli` 只安装 `specweaver` 终端入口。插件升级时使用新版本号
+对应的缓存路径，认证配置始终另行运行。
 
 上述缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
 位置调整命令，或者回到 Codex App 发送“配置 SpecWeaver”，由 AI 定位插件并启动
 配置。
 
-首次配置只询问缺失项。三平台只保存认证信息，不执行联网验证；标记为“已配置，
-待首次使用验证”，第一次读取真实资源时再验证认证信息和访问权限。
+`specweaver configure` 先显示平台多选菜单。Tower 输入邮箱和不回显的密码并立即
+验证登录，成功后保存 Cookie；Eolink 和蓝湖只保存，第一次读取真实资源时再验证。
+Tower 要求人工验证时使用 `specweaver configure tower --cookie`。
 
 若当前 Codex 客户端提供插件目录或专用插件管理工具，优先使用该界面或工具完成
 同一安装动作；不要为了绕过宿主权限策略而强制改用终端。
@@ -128,7 +129,7 @@ codex plugin add specweaver@specweaver
 
 插件使用显式 SemVer。不要直接修改 `~/.codex/plugins/cache` 中的 `plugin.json`
 或复制文件覆盖缓存来制造更新结果。更新后使用新版本缓存中的
-`scripts/setup.sh --configure`，让终端入口指向新版本，然后新建 Codex Agent
+  `scripts/setup.sh --install-cli`，让终端入口指向新版本，然后新建 Codex Agent
 任务。
 
 ### 日后更新认证或检查连接
@@ -140,8 +141,8 @@ specweaver configure lanhu
 specweaver check
 ```
 
-不带平台名的 `specweaver configure` 只补齐缺失项；带平台名时只询问并验证该平台。
-Tower、Eolink 或蓝湖单独失效时，不得让用户重填其他平台。
+不带平台名的 `specweaver configure` 先显示平台多选菜单；带平台名时直接进入该
+平台。Tower、Eolink 或蓝湖单独失效时，不得让用户重填其他平台。
 
 ### 安装故障处理
 
@@ -164,7 +165,7 @@ Tower、Eolink 或蓝湖单独失效时，不得让用户重填其他平台。
 用户要求安装后初始化、配置、重新配置、更新 Cookie 或密码、检查连接时，使用
 `configure-specweaver` Skill。
 
-- 认证信息只通过终端明文输入，允许用户整体或按平台跳过配置；
+- 认证信息只通过终端输入，密码不回显，允许用户按平台选择配置；
 - 不要求用户在对话中粘贴 Cookie、密码或 Token；
 - 不读取、展示或总结 `~/.specweaver/.env`；
 - 配置失败时区分未配置、能力关闭、已配置待首次使用验证、登录失效、无权限和

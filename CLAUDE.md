@@ -16,7 +16,7 @@ SpecWeaver 负责：
 ## 安装、更新与加载
 
 当用户要求在 Claude Code 中安装 SpecWeaver 时，按“环境检查 → 添加 marketplace
-→ 安装插件并配置 → 加载插件 → 首次使用验证”的顺序处理。不能把“命令执行成功”
+→ 安装插件 → 提示独立配置命令 → 加载插件 → 首次使用验证”的顺序处理。不能把“命令执行成功”
 描述成“已经可以读取数据源”。
 
 ### 1. 安装前检查
@@ -35,7 +35,7 @@ uv --version
 若 `uv` 不存在，先引导用户按官方方式安装并重新打开终端。不要通过修改插件缓存、
 伪造可执行文件或跳过 MCP 依赖来绕过检查。
 
-### 2. 首次安装并配置
+### 2. 首次安装
 
 Claude Code 用户推荐在普通终端执行一条命令：
 
@@ -44,25 +44,25 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```
 
 该命令安装或复用 Claude Code 中的 `specweaver@specweaver`，将公共终端入口指向
-`~/.specweaver/runtime`，并立即补齐缺失配置。用户明确要求同时安装本机已存在的
-多个 AI 宿主时，省略 `--claude`。
+`~/.specweaver/runtime`，不会自动进入认证配置。用户明确要求同时处理三个宿主时，
+省略 `--claude`；缺少某个宿主 CLI 只跳过该宿主。
 
 现有手动安装方式继续作为单平台安装和故障恢复入口，下面的代码块可以整段复制：
 
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
 安装到 user scope；只有用户明确要求团队共享或仅当前项目使用时，才选择
 `project` 或 `local` scope。
 
-第三条命令从当前版本缓存启动首次配置，并安装后续使用的 `specweaver` 终端命令。
-首次配置只补齐缺失项。三平台只保存认证信息，不执行联网验证；首次读取真实资源
-时再验证认证信息和访问权限。Cookie 和密码只能输入终端中的明文输入，不能发送到
-Claude 对话。配置保存在 `~/.specweaver/.env`。
+第三条命令只安装后续使用的 `specweaver` 终端命令。随后另行运行
+`specweaver configure`，从平台多选菜单进入配置。Tower 邮箱密码会立即验证并生成
+Cookie；Eolink 和蓝湖只保存、后验证。认证信息只能输入终端，密码不回显，不能
+发送到 Claude 对话。配置保存在 `~/.specweaver/.env`。
 
 上述缓存路径已在 macOS 验证；Windows 路径尚未验证。Windows 用户可以按实际缓存
 位置调整命令，或者回到 Claude Code 对话发送“配置 SpecWeaver”，由 AI 定位插件
@@ -111,12 +111,16 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.6.2/scripts/setup.sh --configure
+~/.claude/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能
 判断当前缓存已经是最新版本；不要直接编辑缓存中的 `plugin.json` 来强制更新。
 第三条命令会让终端入口指向当前插件版本；执行后重新加载插件。
+
+Claude 插件通过 `.claude-plugin/plugin.json` 的 `mcpServers` 声明加载三个 MCP，
+不需要手工编辑 `settings.json`。安装或更新后执行 `/reload-plugins`，再用 `/mcp`
+检查 MCP 状态。
 
 ### 日后更新认证或检查连接
 
@@ -173,7 +177,7 @@ Claude Code 从以下文件发现插件：
 
 ## 认证和隐私
 
-- 只让用户在终端明文输入中填写 Cookie、账号和密码；
+- 只让用户在终端填写 Cookie、账号和密码，密码输入不回显；
 - 不让用户把凭证粘贴到 Claude 对话；
 - 不读取或输出 `~/.specweaver/.env`；
 - 不把认证信息写入用户项目、插件目录、提交或日志；
