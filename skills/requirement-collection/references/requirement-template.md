@@ -91,15 +91,16 @@ API 状态：已读取 / 明确无 API 资料 / 等待补充 / 等待后端 / �
 | 编号 | 本地文件 | 原始来源 | 对应内容 | 观察结论 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | IMG-T-001 | [tower-001.png](./images/tower-001.png) | <URL> | <内容> | <事实或无新增事实> | 成功 |
-| IMG-L-001 | [lanhu-001.png](./images/lanhu-001.png) | <设计名称与 URL> | <内容> | <事实或无新增事实> | 成功 |
+| IMG-L-001 | [lanhu-001-preview.png](./images/lanhu-001-preview.png) · [图层结构](./design/lanhu-001.json) | <设计名称与 URL> | <内容> | <事实或无新增事实> | 成功 |
 
 每张成功图片均按下面格式嵌入：
 
 ### <图片编号> · <来源名称>
 
-![<图片编号> <来源名称>](./images/<文件名>)
+![<图片编号> <来源名称>](./images/<预览图文件名>)
 
 - 原始来源：<URL>
+- 结构化证据：[`./design/lanhu-NNN.json`](./design/lanhu-NNN.json)
 - 对应内容：<页面、状态或评论上下文>
 - 观察结论：<事实；无新增事实时明确说明>
 
@@ -130,5 +131,7 @@ API 状态：已读取 / 明确无 API 资料 / 等待补充 / 等待后端 / �
 - 蓝湖：<链接、未启用或明确无资料>
 - Eolink：<链接、项目与 API ID，或明确无资料>
 - 本地图片：[`./images/`](./images/)
+- 蓝湖结构：[`./design/`](./design/)
+- 设计上下文：[`./design-context.json`](./design-context.json)
 - API 文档：[`./api.md`](./api.md)
 - 用户补充与确认：<摘要或无>

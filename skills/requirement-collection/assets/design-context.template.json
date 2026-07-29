@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "requirement": {
+    "source": "tower",
+    "id": "<Tower task ID>",
+    "title": "<Tower task title>",
+    "url": "<Tower task URL>"
+  },
+  "designs": [
+    {
+      "key": "lanhu-001",
+      "platform": "lanhu",
+      "name": "<design name>",
+      "source_url": "<Lanhu design URL>",
+      "project_id": "<Lanhu project ID>",
+      "design_id": "<Lanhu design ID>",
+      "preview": "./images/lanhu-001-preview.png",
+      "facts": "./design/lanhu-001.json",
+      "canvas": {
+        "width": 0,
+        "height": 0
+      },
+      "assets_dir": "./images/lanhu-slices/lanhu-001"
+    }
+  ]
+}

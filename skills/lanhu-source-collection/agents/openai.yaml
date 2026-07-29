@@ -1,0 +1,4 @@
+interface:
+  display_name: "蓝湖来源采集"
+  short_description: "收集蓝湖设计候选、预览图、规范化图层结构及真实切图证据"
+  default_prompt: "Use $lanhu-source-collection to collect traceable design evidence from this Lanhu source."

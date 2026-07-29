@@ -1,0 +1,4 @@
+interface:
+  display_name: "需求资料编织"
+  short_description: "编排多个来源的资料收集、范围确认、文档生成与完整性验证"
+  default_prompt: "Use $requirement-collection to collect and weave the sources for this requirement."

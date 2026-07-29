@@ -11,8 +11,11 @@
 
 - 读取 Tower 分类、正文、全部评论、子任务与附件；
 - `BUG管理` 自动快速分析，普通需求可选择快速分析或完整资料收集；
-- 完整模式按需读取蓝湖设计稿和 Eolink API，生成 `requirement.md`、`api.md` 与本地图片证据；
+- 完整模式按需读取蓝湖规范化图层树、预览图、切图和 Eolink API，生成
+  `requirement.md`、`api.md` 与可追溯本地证据；
 - 蓝湖 MCP 只使用 HTTP，不依赖上游 MCP、Playwright 或 Chromium；
+- 蓝湖设计详情只读取真实 Sketch 数据，不用预览图视觉猜测结构，也不生成
+  Design Tokens 或业务代码；
 - 认证失效时区分未配置、能力关闭、登录失效、无权限和网络错误，并允许更新后从失败节点重试；
 - 通过 Git 提交 Skill 生成受控的 Conventional Commit，并在用户确认后向关联 Tower 写入去重评论。
 
@@ -175,7 +178,7 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。
@@ -188,7 +191,7 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。Claude 插件清单已声明三个 MCP server，
@@ -278,7 +281,7 @@ specweaver check tower
 | `EOLINK_USER` | 始终 | Eolink 登录账号 |
 | `EOLINK_PASSWORD` | 始终 | Eolink 登录密码 |
 | `LANHU_ENABLED` | 始终 | 只接受 `true` 或 `false` |
-| `LANHU_COOKIE` | 蓝湖启用时 | 读取设计稿与原图 |
+| `LANHU_COOKIE` | 蓝湖启用时 | 读取设计列表、图层结构、预览图与切图 |
 | `LANHU_CHECK_URL` | 可选 | 提前检查指定蓝湖项目权限，不写入配置 |
 
 旧配置缺少 `LANHU_ENABLED` 时按 `true` 处理。设置为 `false` 后，需求流程不会询问、读取或下载蓝湖资料。
@@ -346,19 +349,41 @@ Eolink 或蓝湖认证失效，以及 Tower 无法自动续期时，插件会提
 
 ## 工作方式
 
-SpecWeaver 由三个数据源 MCP 和三个工作流 Skill 组成：
+SpecWeaver 由三个数据源 MCP 和可组合的工作流／来源 Skill 组成：
 
 | 组件 | 作用 |
 | --- | --- |
 | Tower MCP | 读取任务分类、正文、评论、子任务和附件；经确认后发布去重评论 |
 | Eolink MCP | 验证登录状态并读取项目、接口列表和接口详情 |
-| 蓝湖 MCP | 验证 Cookie、读取标准 stage 项目的设计列表并下载原图 |
+| 蓝湖 MCP | 验证 Cookie，读取设计列表与规范化图层树，下载预览图和真实切图 |
 | `configure-specweaver` | 补齐或按平台更新认证信息，并检查可直接验证的数据源 |
-| `tower-requirement-collection` | 执行 Bug 快速分析或普通需求资料收集 |
+| `requirement-collection` | 编排快速/完整模式、资料范围、文档生成和最终验证 |
+| `tower-source-collection` | 读取 Tower 任务事实、附件和原始图文位置 |
+| `lanhu-source-collection` | 收集蓝湖候选、预览图、规范化结构和真实切图 |
+| `eolink-source-collection` | 收集 Eolink 接口及字段级契约事实 |
+| `lanhu-design-implementation` | 开发时主动定位设计上下文并按组件查询视觉事实 |
+| `tower-requirement-collection` | 兼容旧版 Skill 名称并转交新总控 |
 | `git-commit` | 审查改动、验证并生成受控提交，按确认同步 Tower |
 
 Skill 是 Agent 行为和流程约束的来源；MCP 只负责读取或执行明确的数据源操作。
 完整资料收集生成的文件写入当前开发项目，不写入插件安装目录。
+
+蓝湖完整资料按以下结构保存：
+
+```text
+docs/tower/<Tower任务名称>/
+├── design-context.json
+├── design/lanhu-001.json
+└── images/
+    ├── lanhu-001-preview.png
+    └── lanhu-slices/lanhu-001/{icon,img,bg}/
+```
+
+规范化 JSON 区分蓝湖直接提供的 `source: fact` 与图层关系推导的
+`source: derived`，并把设计、图层、远程切图、本地文件和内容哈希关联起来。
+`design-context.json` 只保存需求到预览图、结构文件、画布和切图目录的轻量映射。
+进入开发后，`lanhu-design-implementation` 会先查看预览图，再按文本、节点、坐标或
+区域查询精确属性，不要求用户重复说明设计稿位置，也不会把整份大型 JSON 放进对话。
 
 ## Agent 上下文
 

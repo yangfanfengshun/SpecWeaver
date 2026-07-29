@@ -10,7 +10,7 @@ SpecWeaver 负责：
 1. 从 Tower 读取任务分类、正文、评论、子任务和附件；
 2. 对 `BUG管理` 任务进行快速分析；
 3. 对普通需求按用户选择执行快速分析或完整资料收集；
-4. 在完整模式下结合蓝湖设计稿和 Eolink API，生成可追溯资料；
+4. 在完整模式下结合蓝湖规范化图层树、预览图、切图和 Eolink API，生成可追溯资料；
 5. 在用户要求时执行受控 Git 提交，并在确认后向 Tower 发布去重评论。
 
 ## 安装、更新与加载
@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -90,7 +90,7 @@ claude plugin list
 ```
 
 再让用户提供一个自己有权访问的 Tower 任务链接，并按正常需求收集流程读取。能够
-触发 `tower-requirement-collection`、调用 Tower MCP 并返回真实任务信息，才说明
+触发 `requirement-collection`、调用 Tower 来源 Skill 和 Tower MCP，并返回真实任务信息，才说明
 插件、Skill、MCP 和认证链路均已正常工作。
 
 ### 更新已有安装
@@ -111,7 +111,7 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能
@@ -163,7 +163,10 @@ Claude Code 从以下文件发现插件：
 ## 必须遵循的流程
 
 - 配置、更新认证或检查连接：使用 `configure-specweaver`；
-- Tower Bug 或需求资料收集：使用 `tower-requirement-collection`；
+- Tower Bug 或需求资料收集：使用 `requirement-collection`，再按来源调用
+  `tower-source-collection`、`lanhu-source-collection` 和
+  `eolink-source-collection`；
+- 按已收集蓝湖设计开发页面：使用 `lanhu-design-implementation`；
 - 审查并提交 Git 改动：使用 `git-commit`。
 
 命中 Skill 后，先完整读取对应 `SKILL.md`。Skill 的步骤、暂停点、用户确认和完成
@@ -173,7 +176,7 @@ Claude Code 从以下文件发现插件：
 快速分析或完整资料收集；完整模式还要确认采用的资料范围。
 
 `BUG管理` 任务默认只在对话中输出分析，不创建 `requirement.md`、`api.md` 或图片
-目录。
+目录。旧 `tower-requirement-collection` 只作为显式兼容入口，不维护第二套流程。
 
 ## 认证和隐私
 

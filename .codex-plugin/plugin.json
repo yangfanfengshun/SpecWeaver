@@ -1,6 +1,6 @@
 {
   "name": "specweaver",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "需求编织器：读取 Tower、蓝湖和 Eolink，支持快速分析与完整资料收集，并生成可追溯的需求文档。",
   "author": {
     "name": "Yangfan",
@@ -20,7 +20,7 @@
   "interface": {
     "displayName": "SpecWeaver",
     "shortDescription": "把分散上下文编织成可执行的需求资料",
-    "longDescription": "读取 Tower 正文、评论、子任务与附件，并按任务类型进入快速分析或完整资料收集；完整模式可结合蓝湖设计稿与 Eolink API，生成相互关联的 requirement.md、api.md 和本地图片证据。",
+    "longDescription": "以可组合来源 Skill 读取 Tower、蓝湖与 Eolink，按任务类型进入快速分析或完整资料收集；完整模式生成相互关联的 requirement.md、api.md、design-context.json 和本地证据，开发阶段可按需查询精确设计事实。",
     "developerName": "Yangfan",
     "category": "Developer Tools",
     "capabilities": [

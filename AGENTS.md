@@ -14,12 +14,16 @@
 ## 组件职责
 
 - `skills/configure-specweaver/`：配置认证和验证数据源连接；
-- `skills/tower-requirement-collection/`：读取 Tower，并执行 Bug 快速分析或
-  普通需求资料收集；
+- `skills/requirement-collection/`：编排需求模式、资料范围、最终文档与验证；
+- `skills/tower-source-collection/`、`skills/lanhu-source-collection/`、
+  `skills/eolink-source-collection/`：分别读取平台事实并返回统一来源结果；
+- `skills/lanhu-design-implementation/`：开发时主动发现设计上下文并按需查询精确
+  视觉事实；
+- `skills/tower-requirement-collection/`：仅保留旧 Skill 名称兼容入口；
 - `skills/git-commit/`：审查、验证和提交明确范围的 Git 改动；
 - `mcp/tower/`：Tower 任务读取和经确认的评论发布；
 - `mcp/eolink/`：Eolink 项目与 API 读取；
-- `mcp/lanhu/`：蓝湖认证、设计列表与原图读取；
+- `mcp/lanhu/`：蓝湖认证、设计列表、规范化图层树、预览图与切图读取；
 - `scripts/`：MCP 启动、本地认证配置和 `specweaver` 终端命令。
 
 Skill 定义工作流，MCP 提供数据能力。不要绕过 Skill 自行拼接流程，也不要把
@@ -70,7 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.0/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.7.1/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
@@ -104,7 +108,7 @@ codex plugin list --marketplace specweaver
 ```
 
 再让用户提供一个自己有权访问的 Tower 任务链接，并按正常需求收集流程读取。能够
-触发 `tower-requirement-collection`、调用 Tower MCP 并返回真实任务信息，才说明
+触发 `requirement-collection`、调用 Tower 来源 Skill 和 Tower MCP，并返回真实任务信息，才说明
 插件、Skill、MCP 和认证链路均已正常工作。
 
 ### 更新已有安装
@@ -176,7 +180,8 @@ specweaver check
 ### Tower 任务
 
 用户提供 Tower 任务链接或要求分析 Bug、整理需求、补齐设计/API 上下文时，使用
-`tower-requirement-collection` Skill。
+`requirement-collection` Skill。总控根据来源调用 `tower-source-collection`、
+`lanhu-source-collection` 和 `eolink-source-collection`；来源 Skill 不生成最终文档。
 
 - 分类为 `BUG管理` 时直接进行快速分析，在对话中输出，不创建资料文件；
 - 普通需求先展示 Tower、蓝湖和 Eolink 的已发现状态，再让用户选择快速分析或
@@ -184,6 +189,10 @@ specweaver check
 - 完整模式必须先确认设计稿与 API 范围，再下载和生成文件；
 - 只记录可追溯事实，不虚构缺失的设计、接口或验收条件；
 - 数据源认证失败时暂停依赖步骤，让用户重配或明确选择降级。
+
+用户明确要求按已收集需求开发或还原带蓝湖设计的页面时，使用
+`lanhu-design-implementation`。先自动定位 `design-context.json` 并查看预览图，再按
+组件、节点或区域查询结构化设计事实；不要要求用户重复提供已保存的蓝湖链接。
 
 ### Git 提交
 
