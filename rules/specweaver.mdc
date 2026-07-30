@@ -49,6 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 
 安装器优先检测 `agent`，找不到时再检测 `cursor-agent`。检测到后启动对应命令，
 进入 Cursor Agent 输入 `/plugin`，在 Marketplace 中选择 SpecWeaver 并确认安装。
+`agent` 是 Cursor CLI 的正常启动命令，不应因为没有 `cursor-agent` 而误报未安装。
 两个命令都不存在时，可在 Cursor IDE 的 Agent 对话中执行：
 
 ```text
@@ -109,7 +110,7 @@ specweaver configure lanhu
 
 让用户提供一个自己有权访问的 Tower 任务链接。满足以下条件才算完整验证：
 
-1. Cursor 能发现 `tower-requirement-collection`；
+1. Cursor 能发现 `requirement-collection`；
 2. 能调用插件内置 Tower MCP；
 3. 能返回真实任务信息；
 4. 能进入预期的 Bug 或普通需求流程。
@@ -125,10 +126,14 @@ specweaver update --cursor
 specweaver status
 ```
 
-统一命令会更新公共 runtime，并提示用户在 Cursor 的 Customize 或 Plugins 界面
-刷新导入的 marketplace，对 `specweaver` 执行 Update 或 Reinstall。随后执行
-`Developer: Reload Window` 并新建 Agent 对话。更新不覆盖
-`~/.specweaver/.env`。
+统一命令会更新公共 runtime，并提示用户在 Cursor Agent 对话中重新执行：
+
+```text
+/add-plugin https://github.com/yangfanfengshun/SpecWeaver
+```
+
+确认插件详情显示目标版本后，执行 `Developer: Reload Window` 并新建 Agent 对话。
+更新不覆盖 `~/.specweaver/.env`。
 
 如果没有使用统一安装入口，继续通过 `configure-specweaver` Skill 重新执行
 `scripts/setup.sh --install-cli`，让终端入口指向当前插件版本。
@@ -136,10 +141,9 @@ specweaver status
 更新后核对插件详情显示的版本。不要编辑 `~/.cursor/plugins/cache` 下的文件来
 伪造版本更新。
 
-如果从 GitHub 导入的 marketplace 在 Update 或 Reinstall 后仍停留在旧版本，应
-报告实际版本，并说明 GitHub 导入尚未刷新。不要删除 Cursor 的整个插件缓存。只有
-用户明确接受需要本地 checkout 的方案时，才提供 local development plugin 作为
-临时替代。
+如果重新执行 `/add-plugin` 后仍停留在旧版本，应报告实际版本，并说明 GitHub 导入
+尚未刷新。不要删除 Cursor 的整个插件缓存。只有用户明确接受需要本地 checkout 的
+方案时，才提供 local development plugin 作为临时替代。
 
 ## 故障处理
 
@@ -156,7 +160,9 @@ specweaver status
 安装后，每个 SpecWeaver 请求都应遵循对应的 `SKILL.md`：
 
 - 配置与连接检查：`configure-specweaver`；
-- Tower Bug 和需求资料收集：`tower-requirement-collection`；
+- Tower Bug 和需求资料收集：`requirement-collection`，再按来源调用独立来源 Skill；
+- 按已收集蓝湖设计开发页面：`lanhu-design-implementation`；
+- 记录本次完成事项或汇总当天跨项目日报：`daily-report`；
 - 受控 Git 提交：`git-commit`。
 
 本规则只负责 Cursor 特有的安装和生命周期说明，不能替代 Skill 中的流程门槛、

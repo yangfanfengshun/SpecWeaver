@@ -11,7 +11,8 @@ SpecWeaver 负责：
 2. 对 `BUG管理` 任务进行快速分析；
 3. 对普通需求按用户选择执行快速分析或完整资料收集；
 4. 在完整模式下结合蓝湖规范化图层树、预览图、切图和 Eolink API，生成可追溯资料；
-5. 在用户要求时执行受控 Git 提交，并在确认后向 Tower 发布去重评论。
+5. 在用户明确触发时记录当前项目的完成事项，并汇总当天跨项目日报；
+6. 在用户要求时执行受控 Git 提交，并在确认后向 Tower 发布去重评论。
 
 ## 安装、更新与加载
 
@@ -52,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -111,7 +112,7 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能
@@ -167,6 +168,7 @@ Claude Code 从以下文件发现插件：
   `tower-source-collection`、`lanhu-source-collection` 和
   `eolink-source-collection`；
 - 按已收集蓝湖设计开发页面：使用 `lanhu-design-implementation`；
+- 记录本次完成事项或汇总当天跨项目日报：使用 `daily-report`；
 - 审查并提交 Git 改动：使用 `git-commit`。
 
 命中 Skill 后，先完整读取对应 `SKILL.md`。Skill 的步骤、暂停点、用户确认和完成
@@ -177,6 +179,11 @@ Claude Code 从以下文件发现插件：
 
 `BUG管理` 任务默认只在对话中输出分析，不创建 `requirement.md`、`api.md` 或图片
 目录。旧 `tower-requirement-collection` 只作为显式兼容入口，不维护第二套流程。
+
+日报只在用户明确说“整理一下日报”或“整理今天日报”等指令后处理。记录模式只保存
+项目名称和有完成证据的事项到 `~/.specweaver/daily-logs/YYYY-MM-DD.md`；汇总模式
+读取当天对应文件并在对话中合并输出。不要补写进行中事项、问题或明日计划，也不要
+声称未主动记录的任务已经进入日报。
 
 ## 认证和隐私
 

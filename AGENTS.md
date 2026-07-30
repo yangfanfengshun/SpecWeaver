@@ -19,6 +19,7 @@
   `skills/eolink-source-collection/`：分别读取平台事实并返回统一来源结果；
 - `skills/lanhu-design-implementation/`：开发时主动发现设计上下文并按需查询精确
   视觉事实；
+- `skills/daily-report/`：把当前任务的已完成事项写入共享日志，或汇总当天跨项目日报；
 - `skills/tower-requirement-collection/`：仅保留旧 Skill 名称兼容入口；
 - `skills/git-commit/`：审查、验证和提交明确范围的 Git 改动；
 - `mcp/tower/`：Tower 任务读取和经确认的评论发布；
@@ -74,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
@@ -194,6 +195,17 @@ specweaver check
 用户明确要求按已收集需求开发或还原带蓝湖设计的页面时，使用
 `lanhu-design-implementation`。先自动定位 `design-context.json` 并查看预览图，再按
 组件、节点或区域查询结构化设计事实；不要要求用户重复提供已保存的蓝湖链接。
+
+### 日报整理
+
+用户说“整理一下日报”“把本次工作加入日报”“整理今天日报”或“汇总今日工作”时，
+使用 `daily-report` Skill。
+
+- 记录模式只提取当前项目名称和已有完成证据的事项，写入
+  `~/.specweaver/daily-logs/YYYY-MM-DD.md`；
+- 汇总模式读取当天全部项目记录，在对话中输出合并后的日报，不重复写回日志；
+- 不记录进行中事项、问题、明日计划、对话全文、私有链接或认证信息；
+- 只有用户明确触发才记录，不能假装遗忘的任务已经自动进入日报。
 
 ### Git 提交
 

@@ -16,6 +16,7 @@
 - 蓝湖 MCP 只使用 HTTP，不依赖上游 MCP、Playwright 或 Chromium；
 - 蓝湖设计详情只读取真实 Sketch 数据，不用预览图视觉猜测结构，也不生成
   Design Tokens 或业务代码；
+- 任务结束时可按项目追加已完成事项，并在下班时汇总当天跨项目日报；
 - 认证失效时区分未配置、能力关闭、登录失效、无权限和网络错误，并允许更新后从失败节点重试；
 - 通过 Git 提交 Skill 生成受控的 Conventional Commit，并在用户确认后向关联 Tower 写入去重评论。
 
@@ -89,7 +90,8 @@ curl -fsSL \
 Cursor 当前没有经过验证的非交互式插件安装命令。安装器优先检测 `agent`，找不到
 时再检测 `cursor-agent`。检测到 CLI 后，启动该命令并在 Cursor Agent 中输入
 `/plugin`，从 Marketplace 选择 SpecWeaver；不会执行不存在的 `agent plugin ...`
-命令。
+命令。`agent` 是 Cursor CLI 的正常启动命令，不应因为没有 `cursor-agent` 而误报
+Cursor CLI 未安装。
 
 未检测到 Cursor CLI 时，仍可在 Cursor IDE 的 Agent 对话中执行：
 
@@ -181,7 +183,7 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。
@@ -194,7 +196,7 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.2/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。Claude 插件清单已声明三个 MCP server，
@@ -233,8 +235,16 @@ specweaver update
 该命令只适用于通过推荐入口创建的 `~/.specweaver/runtime`。只使用过手动分平台安装
 时，先运行推荐安装命令接管，或者继续使用对应宿主的原生更新命令。
 
-Cursor 会收到 Update 或 Reinstall 提示，仍由用户在原生插件界面确认。更新不会
-覆盖 `~/.specweaver/.env`；runtime 存在本地修改时会停止，不自动覆盖。
+Cursor 更新时，在 Agent 对话中重新执行：
+
+```text
+/add-plugin https://github.com/yangfanfengshun/SpecWeaver
+```
+
+确认插件详情显示目标版本后，执行 `Developer: Reload Window` 并新建 Agent 任务。
+`specweaver status` 只能检测 `agent` / `cursor-agent` CLI，无法可靠读取 Cursor 插件
+版本，因此会明确提示人工确认，不代表没有检测到 Cursor CLI。更新不会覆盖
+`~/.specweaver/.env`；runtime 存在本地修改时会停止，不自动覆盖。
 
 只更新指定宿主：
 
@@ -312,6 +322,25 @@ specweaver check tower
 
 Git Skill 不会自动推送、创建 PR、合并或发布。Tower 评论始终先 dry-run，只有用户明确确认后才发布。
 
+### 整理跨项目日报
+
+当前任务完成后说：
+
+```text
+整理一下日报
+```
+
+SpecWeaver 只提取当前项目名称和已经完成的事项，追加到
+`~/.specweaver/daily-logs/YYYY-MM-DD.md`。下班时说：
+
+```text
+整理今天日报
+```
+
+插件只读取当天对应的 Markdown 文件，按项目输出可直接发送的日报。同一项目会自动
+合并，完全相同的事项不会重复写入。该能力只在明确指令后记录；忘记说“整理一下
+日报”的任务不会自动进入日志。
+
 ### 配置或恢复数据源
 
 也可以让 Agent 调用同一套受控配置命令：
@@ -369,6 +398,7 @@ SpecWeaver 由三个数据源 MCP 和可组合的工作流／来源 Skill 组成
 | `eolink-source-collection` | 收集 Eolink 接口及字段级契约事实 |
 | `lanhu-design-implementation` | 开发时主动定位设计上下文并按组件查询视觉事实 |
 | `tower-requirement-collection` | 兼容旧版 Skill 名称并转交新总控 |
+| `daily-report` | 按项目记录当前任务的完成事项，并汇总当天跨项目日报 |
 | `git-commit` | 审查改动、验证并生成受控提交，按确认同步 Tower |
 
 Skill 是 Agent 行为和流程约束的来源；MCP 只负责读取或执行明确的数据源操作。

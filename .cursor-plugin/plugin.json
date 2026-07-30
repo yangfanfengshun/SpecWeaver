@@ -1,8 +1,8 @@
 {
   "name": "specweaver",
   "displayName": "SpecWeaver",
-  "description": "需求编织器：读取 Tower、蓝湖和 Eolink，支持快速分析与完整资料收集，并生成可追溯的需求文档。",
-  "version": "0.7.2",
+  "description": "需求编织器：收集 Tower、蓝湖和 Eolink 的可追溯需求资料，辅助设计还原，并记录跨项目日报。",
+  "version": "0.7.3",
   "author": {
     "name": "Yangfan"
   },

@@ -174,8 +174,9 @@ update_claude() {
 
 print_cursor_update() {
   cat <<'EOF'
-Cursor：请在 Customize 或 Plugins 中对 specweaver 执行 Update 或 Reinstall，
-然后执行 Developer: Reload Window 并新建 Agent 任务。
+Cursor：请在 Agent 对话中重新执行：
+/add-plugin https://github.com/yangfanfengshun/SpecWeaver
+确认插件详情显示目标版本后，执行 Developer: Reload Window 并新建 Agent 任务。
 EOF
 }
 
@@ -296,7 +297,7 @@ command_status() {
   local cursor_cli
   cursor_cli="$(cursor_command)"
   if [[ -n "$cursor_cli" ]]; then
-    echo "Cursor CLI：${cursor_cli}；插件状态：待人工确认"
+    echo "Cursor CLI：${cursor_cli}；插件版本：请在 Cursor 中人工确认"
   else
     echo "Cursor CLI：未检测到 agent 或 cursor-agent"
   fi
