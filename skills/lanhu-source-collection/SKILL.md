@@ -7,7 +7,7 @@ description: 从蓝湖读取项目与设计候选，并在范围确认后保存�
 
 ## 输入与边界
 
-- 接收蓝湖项目/设计链接、采用范围，以及可选的绝对输出路径和稳定编号。
+- 接收蓝湖项目/设计链接、采用范围，以及可选的绝对项目输出路径。
 - 只负责蓝湖候选与设计证据；不决定需求模式，不生成最终 Markdown。
 - 向总控返回结果时遵守
   [来源结果协议](../requirement-collection/references/source-result-contract.md)。
@@ -25,21 +25,25 @@ description: 从蓝湖读取项目与设计候选，并在范围确认后保存�
 
 ## 收集已确认设计
 
-对每张已确认设计按调用方提供的稳定编号执行：
+对每张已确认设计按稳定 `image_id` 执行：
 
 1. 调用 `lanhu_get_design_detail`，把完整规范化数据写入
-   `design/lanhu-NNN.json`；对话只返回摘要和精简导航。
+   `~/.specweaver/cache/lanhu/<image_id>/<设计名称>--<image_id>.json`；设计改名时原子
+   更新并清理旧名称文件。缓存键使用 `project_id + image_id` 识别来源，`version_id`
+   记录当前版本。
 2. 调用 `lanhu_download_design_images` 保存
-   `images/lanhu-NNN-preview.<ext>`，并实际查看文件，确认它与设计 ID 一致。
+   `images/<设计名称>--<image_id>-preview.<ext>`，并实际查看文件，确认它与设计 ID
+   一致。
 3. 调用 `lanhu_download_slices` 保存到
-   `images/lanhu-slices/lanhu-NNN/`，将 `manifest_file` 指向对应设计 JSON。
+   `images/lanhu-slices/<设计名称>--<image_id>/`；共享设计缓存不写项目切图路径。
 4. 保留设计名称、项目/设计 ID、来源 URL、画布尺寸、预览图、结构文件、切图目录和
-   失败原因，供总控生成 `design-context.json`。
+   失败原因，供统一收集清单记录和后续分析使用。
 
 ## 结果要求
 
 - `items` 只返回候选摘要或已确认设计摘要，不把完整图层树放入对话。
-- `artifacts` 区分 `preview`、`design_facts` 和 `slice`，全部使用相对目标目录的路径。
+- `artifacts` 区分 `preview`、`design_facts` 和 `slice`；项目图片使用相对目标目录的
+  路径，`design_facts` 使用用户缓存绝对路径。
 - `provenance` 关联项目、设计、图层、远程资产与本地文件。
 - 蓝湖直接提供的数据保留 `source: fact`；布局推导保留 `source: derived`。
 - 预览图负责整体视觉理解，结构文件负责精确查询；不得仅凭视觉猜颜色、间距或字体。

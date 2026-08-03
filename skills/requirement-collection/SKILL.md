@@ -1,140 +1,164 @@
 ---
 name: requirement-collection
-description: 编排 Tower、蓝湖、Eolink 等来源的需求资料收集，执行快速分析或完整资料收集，并生成 requirement.md、api.md、design-context.json 和本地证据。用户提供 Tower 任务链接、要求分析 Bug、梳理需求、补齐设计/API 上下文、确认多组资料范围或生成 docs/tower/ 资料时使用。只收集可追溯事实，不制定开发计划、不分析代码改动、不执行开发。
+description: 读取 Tower 任务并按用户意图执行快速分析或确定性完整收集。用户提供 Tower 链接、要求分析 Bug、快速梳理需求、收集 Tower/蓝湖/Eolink 来源或生成 docs/tower 来源资料时使用。完整收集只调用统一脚本写来源文件，结束后询问是否分析；不生成 requirement.md、不分析代码、不执行开发。
 ---
 
 # 需求资料收集
 
 ## 边界
 
-- 把一次需求请求作为一个独立任务处理。
-- 只使用来源 Skill 返回的事实和用户明确补充的信息；标出来源，不按经验补全。
-- 总控负责模式、范围、文件命名、文档生成和最终验证；来源 Skill 不写最终文档。
-- BUG 或快速模式只在对话中回答；完整模式才创建资料目录。
-- 不发布外部评论，不分析代码范围，不制定技术方案、开发计划或工期。
-- 完成当前路线后立即停止，不进入开发。
+- 收集和分析是两个动作。
+- Tower、附件、蓝湖和 Eolink 的格式、文件名、排序、写入与验证由 MCP 脚本负责。
+- Agent 不组合来源 MCP、不改写来源文件、不自行选择歧义候选。
+- Bug 和快速模式只在对话中回答，不在用户项目生成文件。
+- 完整收集不生成 `requirement.md`；用户确认分析后改用 `requirement-analysis`。
+- 不制定技术方案、代码范围、开发计划或工期，不开始开发。
 
-完整模式生成文件前读取：
+## 1. Tower 预读
 
-- [来源结果协议](references/source-result-contract.md)
-- [需求文档模板](references/requirement-template.md)
-- [API 文档模板](references/api-template.md)
-- [设计上下文模板](assets/design-context.template.json)
+调用 `tower_read_todo(url, include_images=false)`。
 
-快速模式不要加载模板。
-
-## 来源路由
-
-根据已发现来源读取对应 Skill 的完整 `SKILL.md`，再按其规则收集：
-
-| 来源 | 来源 Skill | 主要职责 |
-| --- | --- | --- |
-| Tower | `tower-source-collection` | 任务分类、正文、评论、子任务、附件和图文位置 |
-| 蓝湖 | `lanhu-source-collection` | 设计候选、预览图、规范化结构和切图 |
-| Eolink | `eolink-source-collection` | 项目、分组、接口、字段和示例 |
-
-新增平台时使用新的 `<platform>-source-collection` Skill，并遵守来源结果协议。总控
-只能依赖协议字段，不复制平台 API、认证或下载细节。
-
-## 状态机
-
-严格按以下状态转换，不满足门槛时暂停：
+该工具会把可读原文和机器元数据分别原子写入用户缓存：
 
 ```text
-PRIMARY_SOURCE_READ
-→ TYPE_DECIDED
-→ MODE_SELECTED
-→ MATERIAL_SCOPE_CONFIRMED        # 仅完整模式
-→ SOURCES_COLLECTED               # 仅完整模式
-→ DOCUMENTS_WRITTEN               # 仅完整模式
-→ VERIFIED                        # 仅完整模式
-→ DONE
+~/.specweaver/cache/tower/<任务ID>/
+├── tower-raw.md
+└── tower-metadata.json
 ```
 
-始终保留已读取事实和用户选择。认证更新或用户回答后从当前失败状态继续，不重复已完成
-的来源读取。
+工具结果只包含任务类型、缓存路径、评论/附件/子任务数量、外部来源和未解决事项。
 
-## 1. 读取主来源并决定模式
+- 不要求工具把全文返回对话。
+- 需要分析 Tower 内容时，由 Agent 读取结果中的 `cache_file`。
+- 子任务默认只保留标题和链接；用户明确要求时再单独读取指定子任务。
+- 只有明确 `Bug` Tag 才是 `task_type: bug`，其他情况均为普通需求。
 
-Tower 链接作为主来源时，使用 `tower-source-collection` 读取任务，但先不下载附件。
+## 2. 选择路线
 
-- 任一 Tower 分类名称与 `BUG管理` 完全一致：自动进入快速模式，读取包含附件的完整
-  Tower 结果，输出 Bug 摘要、触发条件、当前表现、期望表现、影响范围、证据和未明确
-  事项；不读取其他来源、不创建文件，随后进入 `DONE`。
-- 普通需求：展示已发现的设计、API 和其他来源状态，让用户选择“快速分析”或
-  “完整资料收集”。存在外部资料、多页面或复杂规则时推荐完整模式，但不替用户选择。
-- 快速模式：只读取主来源及其附件，在对话中回答；不读取蓝湖或 Eolink，不创建目录。
+### Bug
 
-需要选择时优先使用宿主原生选择工具；不可用时使用编号文字。提问后暂停，收到回答前
-不得继续。
+`task_type: bug` 时自动进入快速路线：
 
-## 2. 确认完整模式资料范围
+1. 读取缓存中的 `tower-raw.md`。
+2. 缓存表明关键事实位于图片时，把相关图片临时下载到系统临时目录；分析结束后删除。
+   超大文件、视频或压缩包必须先征得用户同意。
+3. 在对话中输出 Bug 现象、触发条件、期望、影响、证据和未明确事项。
+4. 不读取蓝湖或 Eolink，不在项目写文件，不生成 `requirement.md`，随后停止。
 
-先检查目标目录中是否已有同一需求的 `requirement.md`；其中已记录资料状态、采用范围
-和依据，且主来源没有出现改变范围的新信息时，复用选择。
+### 普通需求
 
-对每个已发现来源：
+- 用户明确要求快速分析：进入快速路线。
+- 用户明确要求完整收集：进入完整收集。
+- 意图不明确：询问是否需要完整收集，收到回答前暂停。
+- 用户回答“不需要完整收集”或同义表达：进入快速路线。
 
-1. 先调用来源 Skill 的“列举/检查”能力，不下载完整产物。
-2. 只有唯一且与需求明确关联的候选时直接采用。
-3. 缺失、存在多组或关联不明时，只询问实际缺失或不明确项。
-4. 允许用户补充、跳过、取消或改变选择；记录采用与未采用范围及依据。
-5. 范围确认前不得下载附件、设计详情、预览图、切图或生成文档。
+快速路线默认只读取缓存中的 `tower-raw.md` 并在对话中回答，不读取蓝湖或 Eolink，
+不在项目写文件，不生成 `requirement.md`。缓存表明结论依赖图片时可临时下载相关
+图片，分析结束后删除；超大文件、视频或压缩包先征得用户同意。
 
-`disabled` 表示本机未启用能力，不等于资料不存在；`auth_expired`、`forbidden`、
-`network_error` 和 `not_found` 必须保持各自状态，不得静默降级。
+## 3. 完整收集
 
-## 3. 收集已确认来源
+### 3.1 候选与范围
 
-创建 `docs/tower/<Tower原始标题>/design/` 和
-`docs/tower/<Tower原始标题>/images/`；只替换操作系统禁止的目录字符。
-
-1. 依次调用已确认来源 Skill，传入明确范围和绝对输出目录。
-2. 要求每个来源按来源结果协议返回结果；不把完整大对象复制到对话。
-3. 逐张查看成功保存的 Tower 附件和设计预览图。
-4. 保留来源 URL、稳定编号、本地文件、失败原因、用户选择和未解决事项。
-5. 相同二进制内容只保留一个文件，但每次原始出现位置和来源映射都必须保留。
-6. 任何来源失败只暂停依赖它的步骤；提示重新配置对应平台或由用户明确选择跳过。
-
-## 4. 生成完整资料
-
-固定结构：
+先调用：
 
 ```text
-docs/tower/<Tower任务名称>/
-├── requirement.md
-├── api.md
-├── design-context.json
-├── design/
-│   └── lanhu-001.json
+requirement_collect(tower_url)
+```
+
+脚本只读取 Tower 预读阶段生成的缓存并返回候选，不重复请求 Tower，
+不写用户项目。缓存缺失时先返回 Tower 预读步骤。
+
+- `status: scope_ready`：脚本已确定所有来源均为唯一明确候选，可使用返回的
+  `suggested_scope`。
+- `status: scope_confirmation_required`：只展示脚本返回的候选，让用户选择、跳过、
+  补充或取消；Agent 不自行扩大或改变范围。
+- 认证、权限、网络或来源失败保持原状态并暂停该来源。候选读取阶段失败时，用户重新
+  配置后再次调用 `requirement_collect(tower_url)`；没有用户决定不得继续。明确跳过
+  时从采用数组移除，并在 `skipped_sources` 记录来源、URL 和原因。
+
+同时确认绝对项目输出目录。默认使用脚本返回的 `suggested_directory_name` 放到
+`<项目>/docs/tower/` 下，不由 Agent 自行清洗 Tower 标题。
+
+### 3.2 一次性写入
+
+范围和目录确定后只调用一次：
+
+```text
+requirement_collect(tower_url, output_dir, confirmed_scope)
+```
+
+`confirmed_scope` 必须显式包含：
+
+```json
+{
+  "tower_attachments": true,
+  "allow_restricted_attachments": false,
+  "replace_existing": false,
+  "lanhu": [],
+  "eolink": [],
+  "skipped_sources": []
+}
+```
+
+蓝湖项使用脚本返回的 `url`、`image_id` 和名称；Eolink 项使用 `url` 与用户确认的
+`api_ids`。省略 `api_ids` 只用于用户明确采用该链接下全部接口的情况。
+
+视频、压缩包或已知超大附件只有用户确认后才把
+`allow_restricted_attachments` 设为 `true`。
+
+目标目录已有 `tower-raw.md` 或脚本管理的来源目录时，
+工具返回 `existing_output_confirmation_required`，不得静默覆盖。用户明确确认更新
+同一目录后把 `replace_existing` 设为 `true`；用户选择新目录时保持 `false`。脚本只
+更新自己管理的来源路径，不删除人工文件。
+
+完整写入返回 `partial` 时先展示 `unresolved` 并暂停：
+
+- 用户选择重试：保留原 `output_dir` 和已确认范围，把 `replace_existing` 设为
+  `true` 后重新调用统一入口；当前版本会确定性重跑所选来源，不承诺只请求失败来源。
+- 用户选择跳过蓝湖或 Eolink：从相应采用数组移除，写入 `skipped_sources`，把
+  `replace_existing` 设为 `true` 后重新调用统一入口。
+- 用户只跳过某个 Tower 附件：保持 `tower_attachments: true`，在
+  `skipped_sources` 记录 `source: tower`、该附件来源 URL 和原因；脚本只跳过该 URL。
+  用户跳过全部 Tower 附件时把 `tower_attachments` 设为 `false`。
+- 用户明确接受现有缺失并要求分析：可转入分析，但必须保留 `partial` 状态及影响。
+
+脚本直接在项目写入并验证：
+
+```text
+<output_dir>/
+├── tower-raw.md
+├── tower-attachments/
+├── api/
 └── images/
-    ├── tower-001.png
-    ├── lanhu-001-preview.png
-    └── lanhu-slices/
-        └── lanhu-001/{icon,img,bg}/
+    ├── <设计名称>--<image_id>-preview.<ext>
+    └── lanhu-slices/<设计名称>--<image_id>/
 ```
 
-- 总控独占 `requirement.md`、`api.md` 和 `design-context.json` 的写入权。
-- 按模板生成两份 Markdown，删除占位说明和未使用行。
-- Tower 原始图文必须保持正文和评论的原始顺序；成功图片替换为本地相对路径，失败
-  图片在原位置记录原因和来源链接。
-- `requirement.md` 只写设计结论、预览和证据链接，不嵌入完整图层树或资产清单。
-- API 不涉及、等待后端或无资料时仍生成 `api.md`，只写状态与依据。
-- 按模板生成小型 `design-context.json`，将需求标识映射到设计名称、ID、来源 URL、
-  预览图、结构文件、画布和切图目录；不得嵌入图层树。
-- 同一需求重复运行时更新同一目录，只更新工具管理的文档和对应来源文件，不删除人工
-  文件。
+机器清单写入
+`~/.specweaver/cache/requirements/<Tower-ID>/<输出目录哈希>/manifest.json`；Tower 附件
+映射直接包含在该清单中，不单独生成 `tower-attachments.json`。蓝湖规范化结构写入
+独立缓存
+`~/.specweaver/cache/lanhu/<image_id>/<设计名称>--<image_id>.json`。用户缓存只放
+轻量 Markdown/JSON，图片、切图和附件仍留在项目目录。
 
-## 5. 完成前验证
+Eolink 每个接口独立保存为 `api/<API-ID>-<接口名称>.json`，按 API ID 排序。
 
-- 主来源内容、全部评论/附件线索、资料状态、采用范围和用户选择已处理。
-- 所有来源结果符合协议且不含 Cookie、密码、Token、Authorization 或登录响应。
-- 两份 Markdown、`design-context.json` 及所有声明成功的文件真实存在。
-- 文档链接、图片相对路径和设计上下文中的相对路径都能解析到真实文件。
-- Tower 图文出现顺序未改变；每次出现都能对应本地文件或明确失败占位。
-- 每张设计的预览图、结构文件、设计 ID、画布和切图映射互相一致。
-- 设计事实与 `source: derived` 的推导结果没有混淆。
-- 文档未混入实现建议、开发计划、代码分析或插件内部规则。
+不要调用 `tower_download_images`、`lanhu_get_design_detail`、
+`lanhu_download_design_images`、`lanhu_download_slices` 或 `eolink_read_url` 自行重组
+完整收集。
 
-任一检查失败时修复或明确报告阻塞；没有验证证据时不得声明完成。全部通过后进入
-`DONE`。
+## 4. 收集结束
+
+根据统一工具的小型结果报告：
+
+- 输出目录；
+- Tower、附件、蓝湖设计和 Eolink API 数量；
+- 验证状态、失败和待确认项。
+
+随后询问用户是否现在分析需求：
+
+- 否或稍后：保留来源文件并停止。
+- 是：完整读取 `../requirement-analysis/SKILL.md`，从已收集目录继续。
+
+用户未确认分析前，不得创建或更新 `requirement.md`。

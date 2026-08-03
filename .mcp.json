@@ -14,6 +14,11 @@
       "command": "/bin/bash",
       "args": ["./scripts/run-mcp.sh", "lanhu"],
       "cwd": "."
+    },
+    "specweaver-requirements": {
+      "command": "/bin/bash",
+      "args": ["./scripts/run-mcp.sh", "requirements"],
+      "cwd": "."
     }
   }
 }

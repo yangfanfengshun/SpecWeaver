@@ -6,6 +6,7 @@
 #   "fastmcp>=3.3.1,<4.0.0",
 #   "httpx>=0.27.0,<1.0.0",
 #   "lxml>=5.0.0,<7.0.0",
+#   "markdownify>=0.13.0,<2.0.0",
 #   "mistune>=3.0.0,<4.0.0",
 #   "python-dotenv>=1.0.0,<2.0.0",
 # ]
@@ -13,8 +14,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 import hashlib
+import json
+import mimetypes
+import os
 from pathlib import Path
 import re
 import sys
@@ -23,14 +26,16 @@ from uuid import uuid4
 
 from bs4 import BeautifulSoup
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
 import httpx
+from markdownify import markdownify as html_to_markdown
 import mistune
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (
     IMAGE_EXTENSIONS,
+    UnsafePathError,
+    atomic_write_text,
     manual_cookie_hint,
     prepare_output_dir,
     read_config,
@@ -59,6 +64,8 @@ markdown_to_html = mistune.create_markdown(
     hard_wrap=True,
     plugins=["strikethrough", "table", "task_lists", "url"],
 )
+URL_PATTERN = re.compile(r"https?://[^\s<>()\[\]{}\"']+")
+BUG_TAGS = {"bug"}
 
 
 class TowerSessionError(RuntimeError):
@@ -190,28 +197,117 @@ def text_of(element) -> str:
     return element.get_text(" ", strip=True) if element else ""
 
 
+def is_tower_attachment_url(value: str) -> bool:
+    parsed = urlparse(value)
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+    return (
+        host in {
+            "attachments.tower.im",
+            "tower.im",
+            "www.tower.im",
+            "tower3-downloads.tower.im",
+        }
+        and (
+            host in {"attachments.tower.im", "tower3-downloads.tower.im"}
+            or "/attfiles/" in path
+        )
+    )
+
+
+def attachment_kind(name: str, source_url: str) -> tuple[str, str]:
+    media_type = (
+        mimetypes.guess_type(name)[0]
+        or mimetypes.guess_type(urlparse(source_url).path)[0]
+        or ""
+    )
+    if media_type.startswith("image/"):
+        return "image", media_type
+    if media_type.startswith("video/"):
+        return "video", media_type
+    if media_type in {
+        "application/zip",
+        "application/x-7z-compressed",
+        "application/x-rar-compressed",
+        "application/x-tar",
+        "application/gzip",
+    }:
+        return "archive", media_type
+    return "file", media_type
+
+
 def parse_ordered_content(element) -> dict:
     soup = BeautifulSoup(str(element), "html.parser")
     for tag in soup.find_all(["script", "style"]):
         tag.decompose()
     images = []
-    for image in soup.find_all("img"):
-        src = image.get("src", "")
+    attachments = []
+    links = []
+    handled_images: set[int] = set()
+    for item in list(soup.find_all(["a", "img"])):
+        if item.name == "a":
+            raw_href = str(item.get("href") or "").strip()
+            if not raw_href:
+                continue
+            href = urljoin(TOWER_BASE, raw_href)
+            item["href"] = href
+            label = text_of(item) or str(item.get("download") or "")
+            links.append({"text": label, "url": href})
+            if not is_tower_attachment_url(href):
+                continue
+            name = (
+                str(item.get("download") or "").strip()
+                or label
+                or Path(urlparse(href).path).name
+                or "未提供"
+            )
+            kind, media_type = attachment_kind(name, href)
+            attachments.append({
+                "position": len(attachments) + 1,
+                "source_url": href,
+                "name": name,
+                "kind": kind,
+                "media_type": media_type,
+                "size": str(item.get("data-size") or "未提供"),
+            })
+            nested_images = item.find_all("img")
+            handled_images.update(id(image) for image in nested_images)
+            continue
+
+        image = item
+        raw_src = str(image.get("src") or "").strip()
         alt = image.get("alt", "")
-        if not src:
+        if not raw_src:
             image.replace_with(alt)
             continue
+        src = urljoin(TOWER_BASE, raw_src)
+        image["src"] = src
         images.append({
             "position": len(images) + 1,
             "source_url": src,
             "alt": alt,
         })
-        escaped_alt = (alt or f"Tower 图片 {len(images)}").replace("\\", "\\\\")
-        escaped_alt = escaped_alt.replace("[", "\\[").replace("]", "\\]")
-        image.replace_with(f"![{escaped_alt}]({src})")
+        if id(image) not in handled_images and is_tower_attachment_url(src):
+            name = alt or Path(urlparse(src).path).name or "未提供"
+            kind, media_type = attachment_kind(name, src)
+            attachments.append({
+                "position": len(attachments) + 1,
+                "source_url": src,
+                "name": name,
+                "kind": kind,
+                "media_type": media_type,
+                "size": str(image.get("data-size") or "未提供"),
+            })
+    markdown = html_to_markdown(
+        str(soup),
+        heading_style="ATX",
+        bullets="-",
+    ).strip()
     return {
-        "text": soup.get_text("\n", strip=True),
+        "text": re.sub(r"\n{3,}", "\n\n", markdown),
         "images": images,
+        "attachments": attachments,
+        "links": links,
     }
 
 
@@ -223,7 +319,7 @@ def validate_tower_todo_url(url: str) -> str | None:
     parsed = urlparse(url)
     if parsed.scheme != "https":
         return "请提供 Tower HTTPS 任务链接"
-    if parsed.netloc not in {"tower.im", "www.tower.im"} or "/todos/" not in parsed.path:
+    if parsed.netloc.lower() not in {"tower.im", "www.tower.im"} or "/todos/" not in parsed.path:
         return "请提供有效的 Tower 任务链接"
     return None
 
@@ -315,15 +411,57 @@ async def post_comment(
 def parse_comments(soup: BeautifulSoup) -> list[dict]:
     comments = []
     for content in soup.select("tr-editor-output-renderer .comment-content"):
-        ordered_content = parse_ordered_content(content)
-        if not ordered_content["text"]:
+        if content.find_parent(class_="desc-content"):
             continue
         wrapper = content.find_parent(class_="comment")
-        author = text_of(wrapper.select_one("a.author")) if wrapper else ""
+        if wrapper is None:
+            continue
+        body_soup = BeautifulSoup(str(content), "html.parser")
+        body = body_soup.select_one(".comment-content") or body_soup
+        quotes = []
+        for quote in body.select("blockquote, .quote, .comment-quote"):
+            quote_text = text_of(quote)
+            if quote_text and quote_text not in quotes:
+                quotes.append(quote_text)
+            quote.decompose()
+        ordered_content = parse_ordered_content(body)
+        if not ordered_content["text"] and not quotes:
+            continue
+        author = text_of(wrapper.select_one("a.author"))
+        comment_id = ""
+        created_at = ""
+        reply_to = ""
+        comment_id = next((
+            str(wrapper.get(name) or "").strip()
+            for name in ("data-comment-guid", "data-comment-id", "data-guid", "id")
+            if wrapper.get(name)
+        ), "")
+        time_element = wrapper.select_one("time, [datetime], .time, .date")
+        if time_element:
+            created_at = next((
+                str(time_element.get(name) or "").strip()
+                for name in ("datetime", "title", "data-tooltip")
+                if time_element.get(name)
+            ), "") or text_of(time_element)
+        reply_to = next((
+            str(wrapper.get(name) or "").strip()
+            for name in ("data-reply-to", "data-reply-comment-id")
+            if wrapper.get(name)
+        ), "")
+        if not reply_to:
+            reply_to = text_of(
+                wrapper.select_one(".reply-to, .comment-reply, .comment-ref")
+            )
         comments.append({
+            "id": comment_id,
             "author": author,
+            "created_at": created_at,
+            "reply_to": reply_to,
+            "quote": "\n\n".join(quotes),
             "text": ordered_content["text"],
             "images": ordered_content["images"],
+            "attachments": ordered_content["attachments"],
+            "links": ordered_content["links"],
         })
     return comments
 
@@ -346,18 +484,88 @@ def build_image_occurrences(data: dict) -> list[dict]:
     return occurrences
 
 
+def build_attachment_occurrences(data: dict) -> list[dict]:
+    occurrences = []
+
+    def append(scope: str, scope_index: int, attachments: list[dict]) -> None:
+        for attachment in attachments:
+            occurrences.append({
+                "occurrence_index": len(occurrences) + 1,
+                "scope": scope,
+                "scope_index": scope_index,
+                **attachment,
+            })
+
+    append("description", 1, data.get("description_attachments", []))
+    for comment_index, comment in enumerate(data.get("comments", []), 1):
+        append("comment", comment_index, comment.get("attachments", []))
+    return occurrences
+
+
+def unique_attachments(occurrences: list[dict]) -> list[dict]:
+    items = []
+    seen: set[str] = set()
+    for occurrence in occurrences:
+        source_url = occurrence["source_url"]
+        if source_url in seen:
+            continue
+        seen.add(source_url)
+        items.append({
+            key: occurrence[key]
+            for key in ("source_url", "name", "kind", "media_type", "size")
+        })
+    return items
+
+
+def classify_external_url(value: str) -> str | None:
+    parsed = urlparse(value.rstrip(".,;:!?，。；：！？"))
+    host = (parsed.hostname or "").lower()
+    if not host or host in {
+        "tower.im",
+        "www.tower.im",
+        "attachments.tower.im",
+        "tower3-downloads.tower.im",
+    }:
+        return None
+    if host == "lanhuapp.com" or host.endswith(".lanhuapp.com"):
+        return "lanhu"
+    eolink_shape = (
+        "projectid=" in parsed.fragment.lower()
+        and "api" in parsed.fragment.lower()
+    )
+    if "eolink" in host or eolink_shape:
+        return "eolink"
+    return "other"
+
+
+def discover_external_sources(data: dict) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {"lanhu": [], "eolink": [], "other": []}
+    candidates = []
+    candidates.extend(data.get("description_links", []))
+    for comment in data.get("comments", []):
+        candidates.extend(comment.get("links", []))
+    for text in [
+        data.get("description", ""),
+        *(comment.get("text", "") for comment in data.get("comments", [])),
+    ]:
+        candidates.extend({"url": match.group(0)} for match in URL_PATTERN.finditer(text))
+    for item in candidates:
+        value = str(item.get("url") or "").rstrip(".,;:!?，。；：！？")
+        source = classify_external_url(value)
+        if source and value not in result[source]:
+            result[source].append(value)
+    return result
+
+
 def parse_images(soup: BeautifulSoup) -> list[str]:
     urls = []
     for element in soup.select("img[src], a[href]"):
-        value = element.get("src") or element.get("href") or ""
-        parsed = urlparse(value)
-        host = parsed.netloc.lower()
-        path = parsed.path.lower()
-        is_attachment = (
-            host in {"attachments.tower.im", "tower.im", "www.tower.im"}
-            and (host == "attachments.tower.im" or "/attfiles/" in path)
+        value = urljoin(
+            TOWER_BASE,
+            element.get("src") or element.get("href") or "",
         )
-        if is_attachment and value not in urls:
+        kind, _ = attachment_kind(text_of(element), value)
+        if is_tower_attachment_url(value) and kind == "image" and value not in urls:
             urls.append(value)
     return urls
 
@@ -372,6 +580,33 @@ def parse_project_sections(soup: BeautifulSoup) -> list[dict[str, str]]:
         if (value["category"] or value["section"]) and value not in sections:
             sections.append(value)
     return sections
+
+
+def parse_tags(soup: BeautifulSoup) -> list[str]:
+    tags = []
+    selectors = (
+        "[data-tag-name], [data-label-name], "
+        "tr-todo-labels-field-detail-item, .todo-label, .todo-tag"
+    )
+    for item in soup.select(selectors):
+        if (
+            item.find_parent(class_="desc-content")
+            or item.find_parent(class_="comment-content")
+        ):
+            continue
+        value = str(item.get("data-tag-name") or item.get("data-label-name") or "")
+        value = value.strip() or text_of(item)
+        if value and value not in tags:
+            tags.append(value)
+    return tags
+
+
+def task_type_from_tags(tags: list[str]) -> str:
+    normalized = {
+        re.sub(r"\s+", "", tag).strip("#[]【】").lower()
+        for tag in tags
+    }
+    return "bug" if normalized & BUG_TAGS else "requirement"
 
 
 def decode_javascript_string(value: str) -> str:
@@ -411,31 +646,49 @@ def parse_stream_response(javascript: str) -> str:
     return decode_javascript_string(match.group(1))
 
 
-async def read_stream_fragments(soup: BeautifulSoup) -> list[str]:
-    queue = deque(
-        element.get("data-url")
-        for element in soup.select("[data-comment-streams-range][data-url]")
-        if element.get("data-url")
-    )
+async def expand_stream_fragments(soup: BeautifulSoup) -> int:
     visited: set[str] = set()
-    fragments = []
-    while queue:
-        url = queue.popleft()
-        if url in visited:
-            continue
-        visited.add(url)
-        fragment = parse_stream_response((await request(url)).text)
-        fragments.append(fragment)
-        fragment_soup = BeautifulSoup(fragment, "lxml")
-        for element in fragment_soup.select("[data-comment-streams-range][data-url]"):
-            next_url = element.get("data-url")
-            if next_url and next_url not in visited:
-                queue.append(next_url)
-    return fragments
+    stream_count = 0
+
+    async def expand(container: BeautifulSoup) -> None:
+        nonlocal stream_count
+        while True:
+            placeholder = next((
+                item
+                for item in container.select(
+                    "[data-comment-streams-range][data-url]"
+                )
+                if not item.find_parent(class_="desc-content")
+                and not item.find_parent(class_="comment-content")
+            ), None)
+            if placeholder is None:
+                return
+            source_url = urljoin(
+                TOWER_BASE,
+                str(placeholder.get("data-url") or ""),
+            )
+            if not source_url or source_url in visited:
+                placeholder.decompose()
+                continue
+            visited.add(source_url)
+            fragment = parse_stream_response(
+                (await request(source_url)).text
+            )
+            stream_count += 1
+            fragment_soup = BeautifulSoup(fragment, "lxml")
+            await expand(fragment_soup)
+            fragment_root = fragment_soup.body or fragment_soup
+            for node in list(fragment_root.contents):
+                placeholder.insert_before(node)
+            placeholder.decompose()
+
+    await expand(soup)
+    return stream_count
 
 
 def parse_todo(soup: BeautifulSoup, url: str) -> dict:
     page = soup.select_one(".page-inner")
+    tags = parse_tags(soup)
     data = {
         "title": page.get("data-page-name", "") if page else "",
         "url": url,
@@ -444,6 +697,8 @@ def parse_todo(soup: BeautifulSoup, url: str) -> dict:
         "comments": parse_comments(soup),
         "image_urls": parse_images(soup),
         "project_sections": parse_project_sections(soup),
+        "tags": tags,
+        "task_type": task_type_from_tags(tags),
     }
     data["todo_id"] = text_of(soup.select_one(".original-text"))
     data["assignee"] = text_of(soup.select_one(".addition-content.has-assignee"))
@@ -452,10 +707,17 @@ def parse_todo(soup: BeautifulSoup, url: str) -> dict:
     description = soup.select_one(".desc-content")
     ordered_description = (
         parse_ordered_content(description)
-        if description else {"text": "", "images": []}
+        if description else {
+            "text": "",
+            "images": [],
+            "attachments": [],
+            "links": [],
+        }
     )
     data["description"] = ordered_description["text"]
     data["description_images"] = ordered_description["images"]
+    data["description_attachments"] = ordered_description["attachments"]
+    data["description_links"] = ordered_description["links"]
     data["parents"] = [
         {"title": text_of(item), "url": urljoin(TOWER_BASE, item.get("href", ""))}
         for item in soup.select(".breadcrumb-link")
@@ -469,6 +731,9 @@ def parse_todo(soup: BeautifulSoup, url: str) -> dict:
                 "url": urljoin(TOWER_BASE, row.get("detail-url", "")),
             })
     data["image_occurrences"] = build_image_occurrences(data)
+    data["attachment_occurrences"] = build_attachment_occurrences(data)
+    data["attachments"] = unique_attachments(data["attachment_occurrences"])
+    data["external_sources"] = discover_external_sources(data)
     return data
 
 
@@ -477,75 +742,271 @@ async def load_todo_data(url: str) -> dict:
     if is_login_page(response):
         raise RuntimeError("Tower Cookie 已过期，请运行 specweaver configure tower 更新后重试")
     soup = BeautifulSoup(response.text, "lxml")
+    stream_count = await expand_stream_fragments(soup)
     data = parse_todo(soup, url)
     if not data["title"]:
         raise RuntimeError("无法解析 Tower 任务")
 
-    fragments = await read_stream_fragments(soup)
-    for fragment in fragments:
-        fragment_soup = BeautifulSoup(fragment, "lxml")
-        for comment in parse_comments(fragment_soup):
-            if comment not in data["comments"]:
-                data["comments"].append(comment)
-        for image_url in parse_images(fragment_soup):
-            if image_url not in data["image_urls"]:
-                data["image_urls"].append(image_url)
+    ordered_comments = []
+    stable_positions: dict[str, int] = {}
+    for comment in data["comments"]:
+        comment_id = comment.get("id") or ""
+        if comment_id and comment_id in stable_positions:
+            ordered_comments[stable_positions[comment_id]] = comment
+            continue
+        if comment_id:
+            stable_positions[comment_id] = len(ordered_comments)
+        ordered_comments.append(comment)
+    data["comments"] = ordered_comments
     data["image_occurrences"] = build_image_occurrences(data)
-    data["stream_count"] = len(fragments)
+    data["attachment_occurrences"] = build_attachment_occurrences(data)
+    data["attachments"] = unique_attachments(data["attachment_occurrences"])
+    data["external_sources"] = discover_external_sources(data)
+    data["stream_count"] = stream_count
     return data
 
 
+def tower_cache_metadata(data: dict) -> dict:
+    return {
+        "schema_version": 1,
+        "title": data.get("title") or "未提供",
+        "url": data.get("url") or "",
+        "todo_id": data.get("todo_id") or "未提供",
+        "task_type": data.get("task_type", "requirement"),
+        "comment_count": len(data.get("comments", [])),
+        "comment_metadata_incomplete": any(
+            not comment.get("id") or not comment.get("created_at")
+            for comment in data.get("comments", [])
+        ),
+        "sub_todo_count": len(data.get("sub_todos", [])),
+        "attachments": data.get("attachments", []),
+        "attachment_occurrences": data.get("attachment_occurrences", []),
+        "external_sources": data.get("external_sources", {}),
+        "stream_count": data.get("stream_count", 0),
+    }
+
+
 def format_todo(data: dict) -> str:
-    lines = [f"# {data['title']}", f"Tower 链接: {data['url']}"]
-    if data.get("todo_id"):
-        lines.append(f"ID: {data['todo_id']}")
-    lines.append(" | ".join([
-        f"状态: {data['status']}",
-        f"负责人: {data['assignee'] or '未提供'}",
-        f"截止时间: {data['due_date'] or '未提供'}",
-        f"创建时间: {data['created_at'] or '未提供'}",
-    ]))
+    lines = [
+        f"# {data['title'] or '未提供'}",
+        "",
+        "## 任务信息",
+        "",
+        f"- Tower 链接：{data['url']}",
+        f"- 任务 ID：{data.get('todo_id') or '未提供'}",
+        f"- 任务类型：{'Bug' if data.get('task_type') == 'bug' else '普通需求'}",
+        f"- 状态：{data.get('status') or '未提供'}",
+        f"- 负责人：{data.get('assignee') or '未提供'}",
+        f"- 截止时间：{data.get('due_date') or '未提供'}",
+        f"- 创建时间：{data.get('created_at') or '未提供'}",
+        f"- Tags：{', '.join(data.get('tags') or []) or '未提供'}",
+    ]
+    lines.extend(["", "## 所属分类与分组"])
     if data["project_sections"]:
-        lines.extend(["", "## 所属分类与分组"])
         for item in data["project_sections"]:
             lines.append(
                 f"- 分类: {item['category'] or '未提供'} | 分组: {item['section'] or '未提供'}"
             )
+    else:
+        lines.append("- 分类: 未提供 | 分组: 未提供")
+    lines.extend(["", "## 父任务"])
     if data["parents"]:
-        lines.extend(["", "## 父任务"])
         lines.extend(f"- {item['title']}: {item['url']}" for item in data["parents"])
-    if data["description"]:
-        lines.extend(["", "## 正文", data["description"]])
+    else:
+        lines.append("- 未提供")
+    lines.extend(["", "## 正文", "", data.get("description") or "未提供"])
     lines.extend(["", f"## 子任务 ({len(data['sub_todos'])})"])
-    lines.extend(f"- {item['title']}: {item['url']}" for item in data["sub_todos"])
+    if data["sub_todos"]:
+        lines.extend(f"- {item['title']}: {item['url']}" for item in data["sub_todos"])
+    else:
+        lines.append("- 无")
     lines.extend(["", f"## 评论 ({len(data['comments'])})"])
-    for comment in data["comments"]:
-        prefix = f"{comment['author']}: " if comment["author"] else ""
-        lines.append(prefix + comment["text"])
-    lines.extend(["", f"> 已读取全部延迟加载记录（{data['stream_count']} 个区间）。"])
-    lines.extend(["", f"## 图片出现位置 ({len(data['image_occurrences'])})"])
-    for item in data["image_occurrences"]:
+    if not data["comments"]:
+        lines.append("- 无")
+    for index, comment in enumerate(data["comments"], 1):
+        lines.extend([
+            "",
+            f"### 评论 {index}",
+            "",
+            f"- 评论 ID：{comment.get('id') or '未提供'}",
+            f"- 作者：{comment.get('author') or '未提供'}",
+            f"- 时间：{comment.get('created_at') or '未提供'}",
+            f"- 回复对象：{comment.get('reply_to') or '未提供'}",
+            "",
+            "#### 引用",
+            "",
+            comment.get("quote") or "未提供",
+            "",
+            "#### 正文",
+            "",
+            comment.get("text") or "未提供",
+        ])
+    lines.extend([
+        "",
+        "## 读取完整性",
+        "",
+        f"- 延迟加载区间：{data.get('stream_count', 0)}",
+        "- 评论读取状态：完整",
+        "- 子任务读取深度：仅标题和链接，未递归",
+    ])
+    occurrences = data.get("attachment_occurrences", [])
+    lines.extend(["", f"## 附件索引 ({len(occurrences)})"])
+    if not occurrences:
+        lines.append("- 无")
+    for item in occurrences:
         scope = "正文" if item["scope"] == "description" else f"评论 {item['scope_index']}"
-        lines.append(
-            f"- occurrence {item['occurrence_index']}: {scope} / "
-            f"图片位置 {item['position']} / 说明 {item['alt'] or '未提供'} / "
-            f"来源 {item['source_url']}"
-        )
-    lines.extend(["", f"## 附件图片 ({len(data['image_urls'])})"])
-    lines.extend(f"- 图片 {index}: {value}" for index, value in enumerate(data["image_urls"], 1))
+        lines.extend([
+            "",
+            f"### 附件 {item['occurrence_index']}",
+            "",
+            f"- 出现位置：{scope} / 第 {item['position']} 个附件",
+            f"- 名称：{item.get('name') or '未提供'}",
+            f"- 类型：{item.get('media_type') or item.get('kind') or '未提供'}",
+            f"- 大小：{item.get('size') or '未提供'}",
+            f"- 来源：{item['source_url']}",
+        ])
+    sources = data.get("external_sources", {})
+    source_count = sum(len(items) for items in sources.values())
+    lines.extend(["", f"## 外部来源线索 ({source_count})"])
+    for source, label in (
+        ("lanhu", "蓝湖"),
+        ("eolink", "Eolink"),
+        ("other", "其他"),
+    ):
+        values = sources.get(source, [])
+        lines.extend(["", f"### {label} ({len(values)})"])
+        lines.extend(f"- {value}" for value in values)
+        if not values:
+            lines.append("- 无")
     return "\n".join(lines)
 
 
-def tool_error(error: Exception) -> str:
+def tower_cache_key(data: dict, url: str) -> str:
+    path_parts = [part for part in urlparse(url).path.split("/") if part]
+    try:
+        todo_index = path_parts.index("todos")
+        raw = path_parts[todo_index + 1]
+    except (ValueError, IndexError):
+        raw = str(data.get("todo_id") or "unknown")
+    value = re.sub(r"[^0-9A-Za-z._-]+", "-", raw).strip("-")
+    return value or "unknown"
+
+
+def tower_cache_file(data: dict, url: str) -> Path:
+    home = Path(
+        os.getenv("SPECWEAVER_HOME", Path.home() / ".specweaver")
+    ).expanduser()
+    return home / "cache" / "tower" / tower_cache_key(data, url) / "tower-raw.md"
+
+
+def tower_metadata_file(data: dict, url: str) -> Path:
+    return tower_cache_file(data, url).with_name("tower-metadata.json")
+
+
+def write_tower_raw(data: dict, url: str) -> Path:
+    cache_file = atomic_write_text(tower_cache_file(data, url), format_todo(data))
+    atomic_write_text(
+        tower_metadata_file(data, url),
+        json.dumps(
+            tower_cache_metadata(data),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
+    )
+    return cache_file
+
+
+def read_cached_tower_data(url: str) -> tuple[dict, Path]:
+    cache_file = tower_cache_file({}, url)
+    if not cache_file.is_file():
+        raise FileNotFoundError(
+            "Tower 原始缓存不存在；请先调用 tower_read_todo"
+        )
+    if not cache_file.read_text(encoding="utf-8").strip():
+        raise ValueError("tower-raw.md 是空文件")
+    metadata_file = tower_metadata_file({}, url)
+    if not metadata_file.is_file():
+        raise ValueError("Tower 缓存缺少 tower-metadata.json")
+    try:
+        data = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except Exception as error:
+        raise ValueError("tower-metadata.json 损坏") from error
+    if data.get("schema_version") != 1:
+        raise ValueError("tower-metadata.json 的版本不受支持")
+    if data.get("url") != url:
+        raise ValueError("Tower 缓存与请求的 Tower 链接不一致")
+    return data, cache_file
+
+
+def tower_read_summary(data: dict, cache_file: Path) -> dict:
+    unresolved = []
+    if data.get("comment_metadata_incomplete") or any(
+        not comment.get("id") or not comment.get("created_at")
+        for comment in data.get("comments", [])
+    ):
+        unresolved.append("部分评论缺少 Tower 可解析的稳定 ID 或时间，已标记为“未提供”")
+    return {
+        "status": "success",
+        "platform": "tower",
+        "todo_id": data.get("todo_id") or "未提供",
+        "task_title": data.get("title") or "未提供",
+        "task_type": data.get("task_type", "requirement"),
+        "cache_file": str(cache_file),
+        "metadata_file": str(cache_file.with_name("tower-metadata.json")),
+        "comment_count": data.get(
+            "comment_count",
+            len(data.get("comments", [])),
+        ),
+        "attachment_count": len(data.get("attachment_occurrences", [])),
+        "sub_todo_count": data.get(
+            "sub_todo_count",
+            len(data.get("sub_todos", [])),
+        ),
+        "external_sources": data.get("external_sources", {}),
+        "stream_count": data.get("stream_count", 0),
+        "read_complete": True,
+        "unresolved": unresolved,
+    }
+
+
+def tool_error(error: Exception) -> dict[str, str]:
+    if isinstance(error, UnsafePathError):
+        return {
+            "status": "invalid_output",
+            "platform": "tower",
+            "message": str(error),
+        }
     if isinstance(error, TowerSessionError):
-        return f"错误: {error}"
+        return {
+            "status": error.status,
+            "platform": "tower",
+            "message": str(error),
+        }
     if isinstance(error, httpx.HTTPStatusError):
-        if error.response.status_code in {401, 403}:
-            return "错误: Tower 认证信息已失效或无访问权限"
-        return f"错误: Tower 返回 HTTP {error.response.status_code}"
+        code = error.response.status_code
+        status = (
+            "auth_expired" if code == 401
+            else "forbidden" if code == 403
+            else "not_found" if code == 404
+            else "api_error"
+        )
+        return {
+            "status": status,
+            "platform": "tower",
+            "message": f"Tower 返回 HTTP {code}",
+        }
     if isinstance(error, httpx.HTTPError):
-        return f"错误: Tower 网络请求失败: {error}"
-    return f"错误: {error}"
+        return {
+            "status": "network_error",
+            "platform": "tower",
+            "message": f"Tower 网络请求失败: {error}",
+        }
+    return {
+        "status": "api_error",
+        "platform": "tower",
+        "message": str(error),
+    }
 
 
 @mcp.tool()
@@ -576,35 +1037,33 @@ async def tower_check_auth(url: str = TOWER_BASE) -> dict[str, str]:
 
 
 @mcp.tool()
-async def tower_read_todo(url: str, include_images: bool = False) -> list[str | Image] | str:
-    """读取 Tower 分类、正文、全部评论和子任务；确认处理模式后可选择加载附件图片。"""
+async def tower_read_todo(url: str, include_images: bool = False) -> dict | str:
+    """读取并格式化 Tower 原始事实到用户缓存，只返回路径、数量和来源摘要。"""
     if not tower_cookie():
-        return "错误: 未设置 TOWER_COOKIE"
+        return {
+            "status": "missing_config",
+            "platform": "tower",
+            "message": "未设置 TOWER_COOKIE",
+        }
     url_error = validate_tower_todo_url(url)
     if url_error:
-        return f"错误: {url_error}"
+        return {
+            "status": "invalid_input",
+            "platform": "tower",
+            "message": url_error,
+        }
     try:
         data = await load_todo_data(url)
+        cache_file = write_tower_raw(data, url)
     except Exception as error:
         return tool_error(error)
-
-    content: list[str | Image] = [format_todo(data)]
-    if not include_images:
-        return content
-    for index, image_url in enumerate(data["image_urls"], 1):
-        try:
-            image_response = await request(image_url)
-            content_type = image_response.headers.get("content-type", "").split(";", 1)[0]
-            if not content_type.startswith("image/"):
-                content.append(f"附件图片 {index} 读取失败: {content_type or '未知类型'}")
-                continue
-            content.extend([
-                f"附件图片 {index}",
-                Image(data=image_response.content, format=content_type.removeprefix("image/")),
-            ])
-        except Exception as error:
-            content.append(f"附件图片 {index} 读取失败: {tool_error(error)}")
-    return content
+    result = tower_read_summary(data, cache_file)
+    if include_images:
+        result["unresolved"].append(
+            "当前版本不再把附件二进制内联到读取结果；请在快速分析时临时读取，"
+            "或使用完整收集入口写入项目"
+        )
+    return result
 
 
 @mcp.tool()

@@ -71,7 +71,8 @@ Tower: <Tower 链接或“无”>
 
 仅在提交已成功且存在唯一关联 Tower 链接时执行：
 
-1. 使用 `tower_read_todo(url, include_images=false)` 读取全部评论。
+1. 使用 `tower_read_todo(url, include_images=false)` 更新 Tower 原始缓存，再读取结果中
+   `cache_file` 的全部独立评论。
 2. 生成唯一标记：
 
 ```text

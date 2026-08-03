@@ -67,7 +67,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 
 1. 执行 `Developer: Reload Window`；
 2. 新建 Cursor Agent 对话；
-3. 确认 SpecWeaver Skills 和三个 MCP server 已出现。
+3. 确认 SpecWeaver Skills 和四个 MCP server 已出现。
 
 完成重新加载和新对话前，不要声称新安装的版本已经生效。
 
@@ -160,7 +160,9 @@ specweaver status
 安装后，每个 SpecWeaver 请求都应遵循对应的 `SKILL.md`：
 
 - 配置与连接检查：`configure-specweaver`；
-- Tower Bug 和需求资料收集：`requirement-collection`，再按来源调用独立来源 Skill；
+- Tower Bug、快速分析和需求资料收集：`requirement-collection`；完整模式只调用统一
+  `requirement_collect` 工具；
+- 已收集来源的需求分析：`requirement-analysis`；
 - 按已收集蓝湖设计开发页面：`lanhu-design-implementation`；
 - 记录本次完成事项或汇总当天跨项目日报：`daily-report`；
 - 受控 Git 提交：`git-commit`。

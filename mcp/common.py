@@ -33,6 +33,37 @@ IMAGE_EXTENSIONS = {
 }
 
 
+class UnsafePathError(ValueError):
+    pass
+
+
+def _allowed_system_symlink(path: Path) -> bool:
+    expected = {
+        Path("/var"): Path("/private/var"),
+        Path("/tmp"): Path("/private/tmp"),
+        Path("/etc"): Path("/private/etc"),
+    }.get(path)
+    return expected is not None and path.resolve() == expected
+
+
+def unsafe_symlink_components(path: Path) -> list[Path]:
+    absolute = path.expanduser().absolute()
+    components = [absolute, *absolute.parents]
+    return [
+        component
+        for component in components
+        if component.is_symlink() and not _allowed_system_symlink(component)
+    ]
+
+
+def ensure_no_symlink_components(path: Path) -> None:
+    unsafe = unsafe_symlink_components(path)
+    if unsafe:
+        raise UnsafePathError(
+            f"路径中不允许符号链接: {', '.join(map(str, unsafe))}"
+        )
+
+
 def read_config() -> dict[str, str]:
     file_values = dotenv_values(CONFIG_FILE) if CONFIG_FILE.is_file() else {}
     return {
@@ -95,5 +126,33 @@ def prepare_output_dir(output_dir: str) -> Path:
     path = Path(output_dir).expanduser()
     if not path.is_absolute():
         raise ValueError("output_dir 必须是绝对路径")
+    ensure_no_symlink_components(path)
     path.mkdir(parents=True, exist_ok=True)
+    ensure_no_symlink_components(path)
     return path.resolve()
+
+
+def atomic_write_text(path: Path, content: str, *, mode: int = 0o600) -> Path:
+    ensure_no_symlink_components(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_no_symlink_components(path)
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        dir=path.parent,
+        text=True,
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            if content and not content.endswith("\n"):
+                handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp_path.chmod(mode)
+        os.replace(temp_path, path)
+        path.chmod(mode)
+        return path.resolve()
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()

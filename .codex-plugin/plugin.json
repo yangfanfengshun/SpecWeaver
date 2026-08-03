@@ -1,7 +1,7 @@
 {
   "name": "specweaver",
-  "version": "0.7.3",
-  "description": "需求编织器：收集 Tower、蓝湖和 Eolink 的可追溯需求资料，辅助设计还原，并记录跨项目日报。",
+  "version": "0.8.0",
+  "description": "需求编织器：确定性收集 Tower、蓝湖和 Eolink 来源，按确认独立分析需求，并记录跨项目日报。",
   "author": {
     "name": "Yangfan",
     "url": "https://github.com/yangfanfengshun"
@@ -20,7 +20,7 @@
   "interface": {
     "displayName": "SpecWeaver",
     "shortDescription": "把分散上下文编织成可执行的需求资料",
-    "longDescription": "以可组合来源 Skill 读取 Tower、蓝湖与 Eolink，按任务类型进入快速分析或完整资料收集；完整模式生成相互关联的 requirement.md、api.md、design-context.json 和本地证据，开发阶段可按需查询精确设计事实；任务结束后可记录并汇总跨项目日报。",
+    "longDescription": "用确定性脚本读取并验证 Tower、蓝湖与 Eolink 来源，Bug 与快速模式只在对话中回答；完整收集和需求分析严格分离，只有用户确认后 Agent 才从项目来源生成 requirement.md。开发阶段可按需查询精确设计事实，任务结束后可记录并汇总跨项目日报。",
     "developerName": "Yangfan",
     "category": "Developer Tools",
     "capabilities": [
@@ -31,8 +31,8 @@
     "websiteURL": "https://github.com/yangfanfengshun/SpecWeaver#readme",
     "defaultPrompt": [
       "读取这个 Tower 任务，先让我选择快速分析或完整资料收集。",
-      "检查这个 Tower 任务缺少哪些设计稿或 API 资料。",
-      "把 Tower、蓝湖和 Eolink 编织成可追溯的需求资料。",
+      "完整收集这个 Tower 任务的来源资料，收集后先不要分析。",
+      "分析这个已经收集完成的需求目录并生成 requirement.md。",
       "整理一下日报，只记录这个任务已经完成的事项。"
     ]
   }

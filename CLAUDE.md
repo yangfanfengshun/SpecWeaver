@@ -8,9 +8,10 @@
 SpecWeaver 负责：
 
 1. 从 Tower 读取任务分类、正文、评论、子任务和附件；
-2. 对 `BUG管理` 任务进行快速分析；
+2. 对带明确 `Bug` Tag 的任务进行快速分析；
 3. 对普通需求按用户选择执行快速分析或完整资料收集；
-4. 在完整模式下结合蓝湖规范化图层树、预览图、切图和 Eolink API，生成可追溯资料；
+4. 在完整模式下由统一脚本收集 Tower、蓝湖和 Eolink 来源，用户确认后再分析生成
+   `requirement.md`；
 5. 在用户明确触发时记录当前项目的完成事项，并汇总当天跨项目日报；
 6. 在用户要求时执行受控 Git 提交，并在确认后向 Tower 发布去重评论。
 
@@ -53,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -91,7 +92,7 @@ claude plugin list
 ```
 
 再让用户提供一个自己有权访问的 Tower 任务链接，并按正常需求收集流程读取。能够
-触发 `requirement-collection`、调用 Tower 来源 Skill 和 Tower MCP，并返回真实任务信息，才说明
+触发 `requirement-collection`、调用 Tower MCP 并返回真实缓存摘要，才说明
 插件、Skill、MCP 和认证链路均已正常工作。
 
 ### 更新已有安装
@@ -112,14 +113,14 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能
 判断当前缓存已经是最新版本；不要直接编辑缓存中的 `plugin.json` 来强制更新。
 第三条命令会让终端入口指向当前插件版本；执行后重新加载插件。
 
-Claude 插件通过 `.claude-plugin/plugin.json` 的 `mcpServers` 声明加载三个 MCP，
+Claude 插件通过 `.claude-plugin/plugin.json` 的 `mcpServers` 声明加载四个 MCP，
 不需要手工编辑 `settings.json`。安装或更新后执行 `/reload-plugins`，再用 `/mcp`
 检查 MCP 状态。
 
@@ -164,9 +165,9 @@ Claude Code 从以下文件发现插件：
 ## 必须遵循的流程
 
 - 配置、更新认证或检查连接：使用 `configure-specweaver`；
-- Tower Bug 或需求资料收集：使用 `requirement-collection`，再按来源调用
-  `tower-source-collection`、`lanhu-source-collection` 和
-  `eolink-source-collection`；
+- Tower Bug、快速分析或需求资料收集：使用 `requirement-collection`；完整模式只
+  调用统一 `requirement_collect` 工具；
+- 已收集来源的需求分析：使用 `requirement-analysis`；
 - 按已收集蓝湖设计开发页面：使用 `lanhu-design-implementation`；
 - 记录本次完成事项或汇总当天跨项目日报：使用 `daily-report`；
 - 审查并提交 Git 改动：使用 `git-commit`。
@@ -177,8 +178,9 @@ Claude Code 从以下文件发现插件：
 普通需求不能直接静默进入完整模式。先展示已发现的设计稿与 API 状态，让用户选择
 快速分析或完整资料收集；完整模式还要确认采用的资料范围。
 
-`BUG管理` 任务默认只在对话中输出分析，不创建 `requirement.md`、`api.md` 或图片
-目录。旧 `tower-requirement-collection` 只作为显式兼容入口，不维护第二套流程。
+带明确 `Bug` Tag 的任务默认只在对话中输出分析，不创建项目文件。完整收集也不生成
+`requirement.md`；只有用户确认分析后才使用 `requirement-analysis`。旧
+`tower-requirement-collection` 只作为显式兼容入口，不维护第二套流程。
 
 日报只在用户明确说“整理一下日报”或“整理今天日报”等指令后处理。记录模式只保存
 项目名称和有完成证据的事项到 `~/.specweaver/daily-logs/YYYY-MM-DD.md`；汇总模式

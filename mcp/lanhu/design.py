@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from common import atomic_write_text
+
 
 INLINE_NODE_LIMIT = 120
 
@@ -430,11 +432,7 @@ def write_design_document(document: dict[str, Any], output_file: str) -> Path:
         raise ValueError("output_file 必须是绝对路径")
     if path.suffix.lower() != ".json":
         raise ValueError("output_file 必须是 .json 文件")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(f".{path.name}.tmp")
-    temp_path.write_text(
-        json.dumps(document, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    return atomic_write_text(
+        path,
+        json.dumps(document, ensure_ascii=False, indent=2),
     )
-    temp_path.replace(path)
-    return path.resolve()

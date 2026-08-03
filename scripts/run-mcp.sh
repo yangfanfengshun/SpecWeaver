@@ -17,7 +17,7 @@ if [[ -z "$UV_BIN" ]]; then
 fi
 
 case "$SERVER" in
-  tower|eolink|lanhu)
+  tower|eolink|lanhu|requirements)
     SCRIPT="$ROOT_DIR/mcp/$SERVER/server.py"
     ;;
   *)

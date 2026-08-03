@@ -14,7 +14,8 @@
 ## 组件职责
 
 - `skills/configure-specweaver/`：配置认证和验证数据源连接；
-- `skills/requirement-collection/`：编排需求模式、资料范围、最终文档与验证；
+- `skills/requirement-collection/`：处理需求模式和范围，调用统一脚本收集来源；
+- `skills/requirement-analysis/`：用户确认后分析已收集来源并生成 `requirement.md`；
 - `skills/tower-source-collection/`、`skills/lanhu-source-collection/`、
   `skills/eolink-source-collection/`：分别读取平台事实并返回统一来源结果；
 - `skills/lanhu-design-implementation/`：开发时主动发现设计上下文并按需查询精确
@@ -25,6 +26,7 @@
 - `mcp/tower/`：Tower 任务读取和经确认的评论发布；
 - `mcp/eolink/`：Eolink 项目与 API 读取；
 - `mcp/lanhu/`：蓝湖认证、设计列表、规范化图层树、预览图与切图读取；
+- `mcp/requirements/`：确定性编排 Tower、蓝湖和 Eolink 完整来源收集与验证；
 - `scripts/`：MCP 启动、本地认证配置和 `specweaver` 终端命令。
 
 Skill 定义工作流，MCP 提供数据能力。不要绕过 Skill 自行拼接流程，也不要把
@@ -75,7 +77,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
@@ -110,7 +112,7 @@ codex plugin list --marketplace specweaver
 ```
 
 再让用户提供一个自己有权访问的 Tower 任务链接，并按正常需求收集流程读取。能够
-触发 `requirement-collection`、调用 Tower 来源 Skill 和 Tower MCP，并返回真实任务信息，才说明
+触发 `requirement-collection`、调用 Tower MCP、生成缓存并返回真实任务摘要，才说明
 插件、Skill、MCP 和认证链路均已正常工作。
 
 ### 更新已有安装
@@ -182,19 +184,22 @@ specweaver check
 ### Tower 任务
 
 用户提供 Tower 任务链接或要求分析 Bug、整理需求、补齐设计/API 上下文时，使用
-`requirement-collection` Skill。总控根据来源调用 `tower-source-collection`、
-`lanhu-source-collection` 和 `eolink-source-collection`；来源 Skill 不生成最终文档。
+`requirement-collection` Skill。完整模式只调用统一 `requirement_collect` 工具，
+不由 Agent 拼接三个来源 MCP。
 
-- 分类为 `BUG管理` 时直接进行快速分析，在对话中输出，不创建资料文件；
-- 普通需求先展示 Tower、蓝湖和 Eolink 的已发现状态，再让用户选择快速分析或
-  完整资料收集；
-- 完整模式必须先确认设计稿与 API 范围，再下载和生成文件；
+- 只有明确 `Bug` Tag 时直接进行快速分析，在对话中输出，不创建资料文件；
+- 普通需求意图不明确时先询问快速分析或完整资料收集；只有选择完整收集后才读取并
+  展示蓝湖和 Eolink 候选；
+- 完整模式必须先确认设计稿、API 范围和输出目录，再由统一脚本写入来源文件；
+- 完整收集结束后询问是否分析；用户确认后使用 `requirement-analysis` 生成
+  `requirement.md`；
 - 只记录可追溯事实，不虚构缺失的设计、接口或验收条件；
 - 数据源认证失败时暂停依赖步骤，让用户重配或明确选择降级。
 
 用户明确要求按已收集需求开发或还原带蓝湖设计的页面时，使用
-`lanhu-design-implementation`。先自动定位 `design-context.json` 并查看预览图，再按
-组件、节点或区域查询结构化设计事实；不要要求用户重复提供已保存的蓝湖链接。
+`lanhu-design-implementation`。先通过 Tower URL 与项目目录定位用户缓存中的收集
+清单并查看项目预览图，再按组件、节点或区域查询缓存中的结构化设计事实；不要要求
+用户重复提供已保存的蓝湖链接。
 
 ### 日报整理
 

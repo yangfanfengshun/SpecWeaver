@@ -38,10 +38,15 @@ auth_expired
 forbidden
 network_error
 not_found
+api_error
+invalid_input
+verification_required
+compatibility_error
 skipped
 not_applicable
 ```
 
-`artifacts` 中的路径使用相对于需求资料目录的路径；平台工具需要写文件时仍传入绝对
-路径。任何字段都不得包含 Cookie、邮箱密码、Token、Authorization、登录响应或完整
-请求头。
+完整收集的人类可读 `artifacts` 路径使用相对于需求资料目录的路径；Tower 预读产物、
+需求清单和蓝湖规范化结构使用用户缓存绝对路径。平台工具需要写项目文件时仍传入
+绝对输出目录。
+任何字段都不得包含 Cookie、邮箱密码、Token、Authorization、登录响应或完整请求头。

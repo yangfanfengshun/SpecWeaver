@@ -1,18 +1,63 @@
 # SpecWeaver
 
-需求编织器，把 Tower、蓝湖和 Eolink 中分散的上下文编织成可追溯、可执行的需求资料。
+把 Tower、蓝湖和 Eolink 中分散的上下文编织成可追溯、可执行的需求资料。
 
 > Weave scattered context into actionable specs.
 
 本仓库根目录就是可安装的 SpecWeaver 插件。平台安装后直接从自身缓存运行，
 不会在执行期间再次从 GitHub 下载 MCP 源码。
 
+## 需求工作流
+
+SpecWeaver 把“资料收集”和“需求分析”分开：MCP 脚本负责确定性地读取 Tower、蓝湖和
+Eolink，并生成可追溯的来源文件；只有用户确认需要分析时，Agent 才读取这些资料并生成
+`requirement.md`。因此，相同来源和范围得到的收集文件不受所用模型影响，模型能力的
+差异只体现在最终需求分析中。
+
+```mermaid
+flowchart TD
+    A["用户提供 Tower 链接"] --> B["MCP 脚本读取 Tower"]
+    B --> C["用户级轻量缓存生成 tower-raw.md 与 tower-metadata.json"]
+    C --> D{"任务类型"}
+
+    D -->|"存在明确 Bug Tag"| E["Agent 快速分析 Tower"]
+    E --> F["对话输出 Bug 结论"]
+    F --> G["结束：项目不生成文件"]
+
+    D -->|"其他情况默认普通需求"| H{"用户意图"}
+    H -->|"快速分析"| I["Agent 读取 tower-raw.md"]
+    I --> J["对话输出快速分析"]
+    J --> K["结束：项目不生成文件"]
+
+    H -->|"完整收集"| L["确认来源范围和项目目录"]
+    H -->|"意图不明确"| M["询问是否需要完整收集"]
+    M -->|"否"| I
+    M -->|"是"| L
+
+    L --> N["统一收集脚本"]
+    N --> N1["Tower 原文与附件写入项目"]
+    N --> N2["蓝湖结构写缓存，预览图与切图写项目"]
+    N --> N3["Eolink 每个 API 独立写入项目"]
+    N --> N4["收集清单写入用户缓存"]
+
+    N1 --> O["来源资料写入缓存或项目并验证"]
+    N2 --> O
+    N3 --> O
+    N4 --> O
+    O --> P{"用户是否确认分析"}
+
+    P -->|"否或稍后"| Q["结束：保留已收集资料"]
+    P -->|"是"| R["Agent 综合 Tower、蓝湖和 API"]
+    R --> S["生成并验证 requirement.md"]
+```
+
 ## 能力
 
-- 读取 Tower 分类、正文、全部评论、子任务与附件；
-- `BUG管理` 自动快速分析，普通需求可选择快速分析或完整资料收集；
-- 完整模式按需读取蓝湖规范化图层树、预览图、切图和 Eolink API，生成
-  `requirement.md`、`api.md` 与可追溯本地证据；
+- 确定性读取 Tower 正文、独立评论、子任务标题与附件索引，并在用户缓存生成
+  `tower-raw.md`；
+- 明确 `Bug` Tag 自动快速分析，其他普通需求按用户意图选择快速分析或完整收集；
+- 完整收集由统一 MCP 把 Tower、蓝湖和 Eolink 来源直接写入项目；用户确认分析后，
+  Agent 才生成 `requirement.md`；
 - 蓝湖 MCP 只使用 HTTP，不依赖上游 MCP、Playwright 或 Chromium；
 - 蓝湖设计详情只读取真实 Sketch 数据，不用预览图视觉猜测结构，也不生成
   Design Tokens 或业务代码；
@@ -183,7 +228,7 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。
@@ -196,10 +241,10 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.7.3/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
 ```
 
-安装后另行运行 `specweaver configure`。Claude 插件清单已声明三个 MCP server，
+安装后另行运行 `specweaver configure`。Claude 插件清单已声明四个 MCP server，
 无需手工编辑 `settings.json`；安装后执行 `/reload-plugins`，再用 `/mcp` 检查。
 Claude Code 的更新、重载和故障处理规则见 [`CLAUDE.md`](./CLAUDE.md)。
 
@@ -309,10 +354,14 @@ specweaver check tower
 整理这个 Tower 任务：https://tower.im/teams/<team-id>/todos/<todo-id>
 ```
 
-普通需求会先展示已发现的设计稿与 API 状态，再让用户选择：
+普通需求意图不明确时会先询问用户选择：
 
 - 快速分析：只分析 Tower，在对话中回答，不生成文件；
-- 完整资料收集：确认资料范围后再下载并生成文档。
+- 完整资料收集：读取并展示设计稿与 API 候选，确认资料范围后由脚本生成并验证来源
+  文件，不立即生成需求文档。
+
+完整收集结束后，插件会询问是否分析。只有确认后才由
+`requirement-analysis` 读取项目来源并生成 `requirement.md`。
 
 提交当前改动时可以说：
 
@@ -380,20 +429,23 @@ Eolink 认证失效，以及 Tower 或蓝湖无法自动续期时，插件会显
 - 插件 ID：`specweaver`
 - 配置与数据目录：`~/.specweaver`
 - 自定义目录变量：`SPECWEAVER_HOME`
-- MCP：`specweaver-tower`、`specweaver-eolink`、`specweaver-lanhu`
+- MCP：`specweaver-tower`、`specweaver-eolink`、`specweaver-lanhu`、
+  `specweaver-requirements`
 
 ## 工作方式
 
-SpecWeaver 由三个数据源 MCP 和可组合的工作流／来源 Skill 组成：
+SpecWeaver 由三个数据源 MCP、一个统一收集 MCP 和可组合 Skill 组成：
 
 | 组件 | 作用 |
 | --- | --- |
-| Tower MCP | 读取任务分类、正文、评论、子任务和附件；经确认后发布去重评论 |
+| Tower MCP | 格式化 Tower 原始事实到用户缓存并返回小型摘要；经确认后发布去重评论 |
 | Eolink MCP | 验证登录状态并读取项目、接口列表和接口详情 |
 | 蓝湖 MCP | 验证 Cookie，读取设计列表与规范化图层树，下载预览图和真实切图 |
+| 需求收集 MCP | 确认范围前列候选，确认后确定性编排三类来源并验证项目文件 |
 | `configure-specweaver` | 补齐或按平台更新认证信息，并检查可直接验证的数据源 |
-| `requirement-collection` | 编排快速/完整模式、资料范围、文档生成和最终验证 |
-| `tower-source-collection` | 读取 Tower 任务事实、附件和原始图文位置 |
+| `requirement-collection` | 处理快速/完整路线；完整路线只调用统一收集脚本 |
+| `requirement-analysis` | 用户确认后读取已收集来源并生成 `requirement.md` |
+| `tower-source-collection` | 读取 Tower 原始事实并生成可读原文与机器元数据缓存 |
 | `lanhu-source-collection` | 收集蓝湖候选、预览图、规范化结构和真实切图 |
 | `eolink-source-collection` | 收集 Eolink 接口及字段级契约事实 |
 | `lanhu-design-implementation` | 开发时主动定位设计上下文并按组件查询视觉事实 |
@@ -402,24 +454,28 @@ SpecWeaver 由三个数据源 MCP 和可组合的工作流／来源 Skill 组成
 | `git-commit` | 审查改动、验证并生成受控提交，按确认同步 Tower |
 
 Skill 是 Agent 行为和流程约束的来源；MCP 只负责读取或执行明确的数据源操作。
-完整资料收集生成的文件写入当前开发项目，不写入插件安装目录。
+完整资料收集的人类/开发使用文件写入当前项目，机器清单与设计结构写入用户缓存；
+两者都不写入插件安装目录。
 
-蓝湖完整资料按以下结构保存：
+完整来源资料按以下结构保存：
 
 ```text
 docs/tower/<Tower任务名称>/
-├── design-context.json
-├── design/lanhu-001.json
+├── tower-raw.md
+├── tower-attachments/
+├── api/<API-ID>-<接口名称>.json
 └── images/
-    ├── lanhu-001-preview.png
-    └── lanhu-slices/lanhu-001/{icon,img,bg}/
+    ├── <设计名称>--<image_id>-preview.png
+    └── lanhu-slices/<设计名称>--<image_id>/{icon,img,bg}/
 ```
 
 规范化 JSON 区分蓝湖直接提供的 `source: fact` 与图层关系推导的
-`source: derived`，并把设计、图层、远程切图、本地文件和内容哈希关联起来。
-`design-context.json` 只保存需求到预览图、结构文件、画布和切图目录的轻量映射。
-进入开发后，`lanhu-design-implementation` 会先查看预览图，再按文本、节点、坐标或
-区域查询精确属性，不要求用户重复说明设计稿位置，也不会把整份大型 JSON 放进对话。
+`source: derived`。机器清单保存在
+`~/.specweaver/cache/requirements/<Tower-ID>/<输出目录哈希>/manifest.json`，蓝湖
+规范化结构按 `image_id` 保存在独立缓存；用户缓存不保存图片和附件。进入开发后，
+`lanhu-design-implementation` 会通过缓存清单定位设计，先查看项目预览图，再按文本、
+节点、坐标或区域查询精确属性，不要求用户重复说明设计稿位置，也不会把整份大型
+JSON 放进对话。
 
 ## Agent 上下文
 
@@ -492,9 +548,3 @@ SpecWeaver/
 ├── scripts/
 └── release-notes/
 ```
-
-## 版本与支持
-
-版本说明见 [`release-notes/`](./release-notes/)。安装问题请在公开仓库提交
-Issue，并提供平台、插件版本、可公开的错误信息和复现步骤。不要附带 Cookie、
-密码、Token、私有任务内容或完整登录响应。

@@ -14,6 +14,19 @@ from lanhu.api import create_client, get_lanhu_image, is_lanhu_image_url
 from lanhu.design import write_design_document
 
 
+def safe_file_stem(value: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "-", value).strip(" .-")
+    if not cleaned or cleaned in {".", ".."}:
+        raise ValueError("file_stem 不能为空")
+    raw = cleaned.encode("utf-8")[:200]
+    while raw:
+        try:
+            return raw.decode("utf-8").rstrip(" .")
+        except UnicodeDecodeError:
+            raw = raw[:-1]
+    raise ValueError("file_stem 不能为空")
+
+
 async def download_design_images(
     cookie: str,
     images: list[dict[str, Any]],
@@ -52,7 +65,13 @@ async def download_design_images(
                     })
                     continue
 
-                file_name = f"lanhu-{len(hashes) + 1:03d}-preview{extension}"
+                requested_stem = str(image.get("file_stem") or "")
+                file_stem = (
+                    safe_file_stem(requested_stem)
+                    if requested_stem
+                    else f"lanhu-{len(hashes) + 1:03d}-preview"
+                )
+                file_name = f"{file_stem}{extension}"
                 file_path = target_dir / file_name
                 file_path.write_bytes(response.content)
                 item = {
