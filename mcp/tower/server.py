@@ -149,7 +149,11 @@ async def refresh_tower_session(
         await get_client()
 
 
-async def request_once(url: str) -> httpx.Response:
+async def request_once(
+    url: str,
+    *,
+    extra_headers: dict[str, str] | None = None,
+) -> httpx.Response:
     current = urljoin(TOWER_BASE, url)
     client = await get_client()
     for _ in range(6):
@@ -163,7 +167,7 @@ async def request_once(url: str) -> httpx.Response:
             raise ValueError("Tower 请求或重定向目标不是受信任的 HTTPS 域名")
         response = await client.get(
             current,
-            headers=HEADERS,
+            headers={**HEADERS, **(extra_headers or {})},
             follow_redirects=False,
         )
         if not response.is_redirect:
@@ -176,14 +180,26 @@ async def request_once(url: str) -> httpx.Response:
     raise RuntimeError(f"Tower 资源重定向次数过多: {url}")
 
 
-async def request(url: str) -> httpx.Response:
+async def request(
+    url: str,
+    *,
+    extra_headers: dict[str, str] | None = None,
+) -> httpx.Response:
     stale_cookie = tower_cookie()
-    response = await request_once(url)
+    response = (
+        await request_once(url)
+        if extra_headers is None
+        else await request_once(url, extra_headers=extra_headers)
+    )
     if not is_login_page(response):
         return response
     stale_fingerprint = hashlib.sha256(stale_cookie.encode()).hexdigest()
     await refresh_tower_session(urljoin(TOWER_BASE, url), stale_fingerprint)
-    response = await request_once(url)
+    response = (
+        await request_once(url)
+        if extra_headers is None
+        else await request_once(url, extra_headers=extra_headers)
+    )
     if is_login_page(response):
         raise TowerSessionError(
             "auth_expired",
@@ -768,7 +784,7 @@ async def load_todo_data(url: str) -> dict:
 
 def tower_cache_metadata(data: dict) -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "title": data.get("title") or "未提供",
         "url": data.get("url") or "",
         "todo_id": data.get("todo_id") or "未提供",
@@ -903,12 +919,274 @@ def tower_metadata_file(data: dict, url: str) -> Path:
     return tower_cache_file(data, url).with_name("tower-metadata.json")
 
 
-def write_tower_raw(data: dict, url: str) -> Path:
+def tower_image_cache_dir(data: dict, url: str) -> Path:
+    return tower_cache_file(data, url).with_name("images")
+
+
+def write_cached_image(path: Path, content: bytes) -> None:
+    temp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        with temp_path.open("wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp_path.chmod(0o600)
+        os.replace(temp_path, path)
+        path.chmod(0o600)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+async def discover_extensionless_image_attachments(data: dict) -> list[dict]:
+    failures = []
+    occurrences = data.get("attachment_occurrences", [])
+    for candidate_index, attachment in enumerate(data.get("attachments", []), 1):
+        if attachment.get("kind") != "file" or attachment.get("media_type"):
+            continue
+        source_url = str(attachment["source_url"])
+        try:
+            response = await request(
+                source_url,
+                extra_headers={"Range": "bytes=0-0"},
+            )
+            content_type = (
+                response.headers.get("content-type", "")
+                .split(";", 1)[0]
+                .strip()
+                .lower()
+            )
+        except Exception as error:
+            detail = tool_error(error)
+            failures.append({
+                "source_index": candidate_index,
+                "source_url": source_url,
+                "name": attachment.get("name") or "未提供",
+                "status": detail.get("status", "download_error"),
+                "error": (
+                    "无法识别附件是否为图片: "
+                    f"{detail.get('message') or str(error)}"
+                ),
+            })
+            continue
+        if content_type not in IMAGE_EXTENSIONS:
+            continue
+        attachment["kind"] = "image"
+        attachment["media_type"] = content_type
+        for occurrence in occurrences:
+            if occurrence.get("source_url") == source_url:
+                occurrence["kind"] = "image"
+                occurrence["media_type"] = content_type
+    return failures
+
+
+async def download_tower_image_attachments(
+    data: dict,
+    output_dir: Path,
+    *,
+    file_prefix: str,
+) -> dict:
+    target_dir = prepare_output_dir(str(output_dir))
+    failures = await discover_extensionless_image_attachments(data)
+    images = [
+        attachment
+        for attachment in data.get("attachments", [])
+        if attachment.get("kind") == "image"
+    ]
+    downloaded = []
+    hashes: dict[str, dict] = {}
+    saved_names: set[str] = set()
+    source_results: dict[str, dict] = {
+        item["source_url"]: item
+        for item in failures
+    }
+
+    def record_failure(
+        source_index: int,
+        attachment: dict,
+        status: str,
+        error: str,
+    ) -> None:
+        item = {
+            "source_index": source_index,
+            "source_url": attachment["source_url"],
+            "name": attachment.get("name") or "未提供",
+            "status": status,
+            "error": error,
+        }
+        failures.append(item)
+        source_results[attachment["source_url"]] = item
+
+    for source_index, attachment in enumerate(images, 1):
+        source_url = str(attachment["source_url"])
+        try:
+            response = await request(source_url)
+            if is_login_page(response):
+                record_failure(
+                    source_index,
+                    attachment,
+                    "auth_expired",
+                    "Tower Cookie 已过期",
+                )
+                continue
+            content_type = (
+                response.headers.get("content-type", "")
+                .split(";", 1)[0]
+                .strip()
+                .lower()
+            )
+            extension = IMAGE_EXTENSIONS.get(content_type)
+            if not extension:
+                raise ValueError(
+                    f"不支持的图片类型: {content_type or '未知类型'}"
+                )
+            content_hash = hashlib.sha256(response.content).hexdigest()
+            if content_hash in hashes:
+                original = hashes[content_hash]
+                item = {
+                    "source_index": source_index,
+                    "source_url": source_url,
+                    "name": attachment.get("name") or "未提供",
+                    "status": "success",
+                    "file_name": original["file_name"],
+                    "path": original["path"],
+                    "content_type": content_type,
+                    "sha256": content_hash,
+                    "duplicate": True,
+                    "duplicate_of": original["file_name"],
+                }
+                downloaded.append(item)
+                source_results[source_url] = item
+                continue
+            file_name = f"{file_prefix}-{len(hashes) + 1:03d}{extension}"
+            file_path = target_dir / file_name
+            write_cached_image(file_path, response.content)
+            item = {
+                "source_index": source_index,
+                "source_url": source_url,
+                "name": attachment.get("name") or "未提供",
+                "status": "success",
+                "file_name": file_name,
+                "path": str(file_path),
+                "content_type": content_type,
+                "bytes": len(response.content),
+                "sha256": content_hash,
+                "duplicate": False,
+            }
+            hashes[content_hash] = item
+            saved_names.add(file_name)
+            downloaded.append(item)
+            source_results[source_url] = item
+        except TowerSessionError as error:
+            record_failure(
+                source_index,
+                attachment,
+                error.status,
+                str(error),
+            )
+        except httpx.HTTPStatusError as error:
+            code = error.response.status_code
+            status = (
+                "auth_expired" if code == 401
+                else "forbidden" if code == 403
+                else "not_found" if code == 404
+                else "api_error"
+            )
+            record_failure(
+                source_index,
+                attachment,
+                status,
+                f"Tower 返回 HTTP {code}",
+            )
+        except httpx.HTTPError as error:
+            record_failure(
+                source_index,
+                attachment,
+                "network_error",
+                str(error),
+            )
+        except Exception as error:
+            record_failure(
+                source_index,
+                attachment,
+                "download_error",
+                str(error),
+            )
+
+    owned_pattern = re.compile(
+        rf"{re.escape(file_prefix)}-\d{{3}}\.(gif|jpe?g|png|svg|webp)$",
+        re.I,
+    )
+    for old_file in target_dir.iterdir():
+        if (
+            old_file.is_file()
+            and owned_pattern.fullmatch(old_file.name)
+            and old_file.name not in saved_names
+        ):
+            old_file.unlink()
+
+    occurrences = []
+    for occurrence in data.get("attachment_occurrences", []):
+        if occurrence.get("kind") != "image":
+            continue
+        occurrences.append({
+            **occurrence,
+            **source_results.get(occurrence["source_url"], {
+                "status": "not_downloaded",
+                "error": "未找到对应的图片缓存结果",
+            }),
+        })
+
+    status = "success" if not failures else "partial"
+    if failures and not downloaded:
+        failure_statuses = {item["status"] for item in failures}
+        if len(failure_statuses) == 1:
+            status = failure_statuses.pop()
+    return {
+        "status": status,
+        "output_dir": str(target_dir),
+        "source_count": len(images),
+        "saved_count": len(hashes),
+        "images": downloaded,
+        "occurrences": occurrences,
+        "failures": failures,
+    }
+
+
+async def cache_tower_images(data: dict, url: str) -> dict:
+    target_dir = prepare_output_dir(str(tower_image_cache_dir(data, url)))
+    target_dir.parent.chmod(0o700)
+    target_dir.chmod(0o700)
+    return await download_tower_image_attachments(
+        data,
+        target_dir,
+        file_prefix="tower-image",
+    )
+
+
+def write_tower_raw(
+    data: dict,
+    url: str,
+    image_cache: dict | None = None,
+) -> Path:
     cache_file = atomic_write_text(tower_cache_file(data, url), format_todo(data))
+    metadata = tower_cache_metadata(data)
+    metadata["image_cache"] = image_cache or {
+        "status": "not_cached",
+        "output_dir": str(tower_image_cache_dir(data, url)),
+        "source_count": sum(
+            attachment.get("kind") == "image"
+            for attachment in data.get("attachments", [])
+        ),
+        "saved_count": 0,
+        "images": [],
+        "occurrences": [],
+        "failures": [],
+    }
     atomic_write_text(
         tower_metadata_file(data, url),
         json.dumps(
-            tower_cache_metadata(data),
+            metadata,
             ensure_ascii=False,
             indent=2,
             sort_keys=True,
@@ -932,22 +1210,32 @@ def read_cached_tower_data(url: str) -> tuple[dict, Path]:
         data = json.loads(metadata_file.read_text(encoding="utf-8"))
     except Exception as error:
         raise ValueError("tower-metadata.json 损坏") from error
-    if data.get("schema_version") != 1:
+    if data.get("schema_version") not in {1, 2}:
         raise ValueError("tower-metadata.json 的版本不受支持")
     if data.get("url") != url:
         raise ValueError("Tower 缓存与请求的 Tower 链接不一致")
     return data, cache_file
 
 
-def tower_read_summary(data: dict, cache_file: Path) -> dict:
+def tower_read_summary(
+    data: dict,
+    cache_file: Path,
+    image_cache: dict,
+) -> dict:
     unresolved = []
     if data.get("comment_metadata_incomplete") or any(
         not comment.get("id") or not comment.get("created_at")
         for comment in data.get("comments", [])
     ):
         unresolved.append("部分评论缺少 Tower 可解析的稳定 ID 或时间，已标记为“未提供”")
+    if image_cache["failures"]:
+        unresolved.append(
+            f"{len(image_cache['failures'])} 张 Tower 图片缓存失败，"
+            "分析时不得忽略缺失的图片证据"
+        )
+    status = "success" if not image_cache["failures"] else "partial"
     return {
-        "status": "success",
+        "status": status,
         "platform": "tower",
         "todo_id": data.get("todo_id") or "未提供",
         "task_title": data.get("title") or "未提供",
@@ -959,6 +1247,15 @@ def tower_read_summary(data: dict, cache_file: Path) -> dict:
             len(data.get("comments", [])),
         ),
         "attachment_count": len(data.get("attachment_occurrences", [])),
+        "image_count": image_cache["source_count"],
+        "cached_image_count": image_cache["saved_count"],
+        "image_cache_dir": image_cache["output_dir"],
+        "image_paths": [
+            item["path"]
+            for item in image_cache["images"]
+            if not item.get("duplicate")
+        ],
+        "image_failures": image_cache["failures"],
         "sub_todo_count": data.get(
             "sub_todo_count",
             len(data.get("sub_todos", [])),
@@ -1037,8 +1334,8 @@ async def tower_check_auth(url: str = TOWER_BASE) -> dict[str, str]:
 
 
 @mcp.tool()
-async def tower_read_todo(url: str, include_images: bool = False) -> dict | str:
-    """读取并格式化 Tower 原始事实到用户缓存，只返回路径、数量和来源摘要。"""
+async def tower_read_todo(url: str) -> dict | str:
+    """读取 Tower 原始事实与图片到用户缓存，只返回路径、数量和来源摘要。"""
     if not tower_cookie():
         return {
             "status": "missing_config",
@@ -1054,16 +1351,11 @@ async def tower_read_todo(url: str, include_images: bool = False) -> dict | str:
         }
     try:
         data = await load_todo_data(url)
-        cache_file = write_tower_raw(data, url)
+        image_cache = await cache_tower_images(data, url)
+        cache_file = write_tower_raw(data, url, image_cache)
     except Exception as error:
         return tool_error(error)
-    result = tower_read_summary(data, cache_file)
-    if include_images:
-        result["unresolved"].append(
-            "当前版本不再把附件二进制内联到读取结果；请在快速分析时临时读取，"
-            "或使用完整收集入口写入项目"
-        )
-    return result
+    return tower_read_summary(data, cache_file, image_cache)
 
 
 @mcp.tool()
@@ -1075,133 +1367,21 @@ async def tower_download_images(url: str, output_dir: str) -> dict | str:
     if url_error:
         return f"错误: {url_error}"
     try:
-        target_dir = prepare_output_dir(output_dir)
         data = await load_todo_data(url)
+        result = await download_tower_image_attachments(
+            data,
+            Path(output_dir).expanduser(),
+            file_prefix="tower",
+        )
     except Exception as error:
         return tool_error(error)
-
-    downloaded = []
-    failures = []
-    hashes: dict[str, dict] = {}
-    saved_names: set[str] = set()
-    source_results: dict[str, dict] = {}
-
-    def record_failure(
-        source_index: int,
-        source_url: str,
-        status: str,
-        error: str,
-    ) -> None:
-        failures.append({
-            "source_index": source_index,
-            "source_url": source_url,
-            "status": status,
-            "error": error,
-        })
-        source_results[source_url] = {"status": status, "error": error}
-
-    for source_index, image_url in enumerate(data["image_urls"], 1):
-        try:
-            response = await request(image_url)
-            if is_login_page(response):
-                record_failure(
-                    source_index,
-                    image_url,
-                    "auth_expired",
-                    "Tower Cookie 已过期",
-                )
-                continue
-            content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
-            extension = IMAGE_EXTENSIONS.get(content_type)
-            if not extension:
-                raise ValueError(f"不支持的图片类型: {content_type or '未知类型'}")
-            content_hash = hashlib.sha256(response.content).hexdigest()
-            if content_hash in hashes:
-                original = hashes[content_hash]
-                item = {
-                    "source_index": source_index,
-                    "source_url": image_url,
-                    "file_name": original["file_name"],
-                    "path": original["path"],
-                    "content_type": content_type,
-                    "duplicate": True,
-                    "duplicate_of": original["file_name"],
-                    "sha256": content_hash,
-                }
-                downloaded.append(item)
-                source_results[image_url] = {
-                    "status": "success",
-                    "file_name": item["file_name"],
-                    "path": item["path"],
-                }
-                continue
-            file_name = f"tower-{len(hashes) + 1:03d}{extension}"
-            file_path = target_dir / file_name
-            file_path.write_bytes(response.content)
-            item = {
-                "source_index": source_index,
-                "source_url": image_url,
-                "file_name": file_name,
-                "path": str(file_path),
-                "content_type": content_type,
-                "bytes": len(response.content),
-                "sha256": content_hash,
-                "duplicate": False,
-            }
-            hashes[content_hash] = item
-            saved_names.add(file_name)
-            downloaded.append(item)
-            source_results[image_url] = {
-                "status": "success",
-                "file_name": file_name,
-                "path": str(file_path),
-            }
-        except httpx.HTTPStatusError as error:
-            status = "auth_expired" if error.response.status_code == 401 else "forbidden" if error.response.status_code == 403 else "api_error"
-            record_failure(
-                source_index,
-                image_url,
-                status,
-                f"Tower 返回 HTTP {error.response.status_code}",
-            )
-        except httpx.HTTPError as error:
-            record_failure(source_index, image_url, "network_error", str(error))
-        except Exception as error:
-            record_failure(source_index, image_url, "download_error", str(error))
-
-    if not failures:
-        owned_pattern = re.compile(r"tower-\d{3}\.(gif|jpe?g|png|svg|webp)$", re.I)
-        for old_file in target_dir.iterdir():
-            if old_file.is_file() and owned_pattern.fullmatch(old_file.name) and old_file.name not in saved_names:
-                old_file.unlink()
-    status = "success" if not failures else "partial"
-    if failures and not downloaded:
-        failure_statuses = {item["status"] for item in failures}
-        if len(failure_statuses) == 1:
-            status = failure_statuses.pop()
-    occurrences = []
-    for occurrence in data.get("image_occurrences", []):
-        occurrence_result = {
-            **occurrence,
-            **source_results.get(occurrence["source_url"], {
-                "status": "not_downloaded",
-                "error": "未找到对应的附件下载结果",
-            }),
-        }
-        occurrences.append(occurrence_result)
     return {
-        "status": status,
+        **result,
         "platform": "tower",
         "task_title": data["title"],
         "task_url": url,
         "project_sections": data["project_sections"],
-        "source_count": len(data["image_urls"]),
-        "saved_count": len(hashes),
-        "output_dir": str(target_dir),
-        "images": downloaded,
-        "occurrences": occurrences,
-        "failures": failures,
-        "stale_files_removed": not failures,
+        "stale_files_removed": True,
     }
 
 

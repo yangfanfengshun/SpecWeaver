@@ -10,7 +10,7 @@ SpecWeaver 负责：
 1. 从 Tower 读取任务分类、正文、评论、子任务和附件；
 2. 对带明确 `Bug` Tag 的任务进行快速分析；
 3. 对普通需求按用户选择执行快速分析或完整资料收集；
-4. 在完整模式下由统一脚本收集 Tower、蓝湖和 Eolink 来源，用户确认后再分析生成
+4. 在完整模式下由统一脚本收集 Tower、蓝湖和 Eolink 来源，成功后默认直接分析生成
    `requirement.md`；
 5. 在用户明确触发时记录当前项目的完成事项，并汇总当天跨项目日报；
 6. 在用户要求时执行受控 Git 提交，并在确认后向 Tower 发布去重评论。
@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.8.1/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。默认
@@ -113,7 +113,7 @@ specweaver status
 ```bash
 claude plugin marketplace update specweaver
 claude plugin update specweaver@specweaver
-~/.claude/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.8.1/scripts/setup.sh --install-cli
 ```
 
 插件使用显式 SemVer。若 marketplace 已刷新但版本号没有提升，Claude Code 可能
@@ -176,11 +176,15 @@ Claude Code 从以下文件发现插件：
 标准高于本文件中的概述。
 
 普通需求不能直接静默进入完整模式。先展示已发现的设计稿与 API 状态，让用户选择
-快速分析或完整资料收集；完整模式还要确认采用的资料范围。
+快速分析或完整收集并分析；完整模式还要确认采用的资料范围。
 
-带明确 `Bug` Tag 的任务默认只在对话中输出分析，不创建项目文件。完整收集也不生成
-`requirement.md`；只有用户确认分析后才使用 `requirement-analysis`。旧
+带明确 `Bug` Tag 的任务默认只在对话中输出分析，不创建项目文件。完整收集为
+`success` 时直接使用 `requirement-analysis` 生成 `requirement.md`，不再二次询问；
+用户此前明确只收集时停止，`partial` 时暂停。旧
 `tower-requirement-collection` 只作为显式兼容入口，不维护第二套流程。
+
+Tower 预读必须同时缓存正文和全部评论里的普通图片；快速分析必须查看全部缓存图片，
+缓存失败时明确报告缺失证据。
 
 日报只在用户明确说“整理一下日报”或“整理今天日报”等指令后处理。记录模式只保存
 项目名称和有完成证据的事项到 `~/.specweaver/daily-logs/YYYY-MM-DD.md`；汇总模式

@@ -1145,7 +1145,11 @@ async def requirement_collect(
         candidates = await discover_candidates(data)
         suggested_scope, scope_ready = suggested_scope_from_candidates(candidates)
         return {
-            **tower.tower_read_summary(data, cache_file),
+            **tower.tower_read_summary(
+                data,
+                cache_file,
+                data["image_cache"],
+            ),
             "status": (
                 "scope_ready" if scope_ready
                 else "scope_confirmation_required"
@@ -1373,7 +1377,10 @@ async def requirement_collect(
             "让用户选择重试失败来源、明确跳过，或明确接受现有缺失后分析；"
             "重试同一目录时保持 confirmed_scope 并设置 replace_existing=true"
             if status == "partial"
-            else "询问用户是否需要分析；未确认前不要生成 requirement.md"
+            else (
+                "除非用户此前明确要求只收集资料，否则直接使用 "
+                "requirement-analysis 生成 requirement.md，不再二次询问"
+            )
         ),
     }
 

@@ -15,7 +15,8 @@
 
 - `skills/configure-specweaver/`：配置认证和验证数据源连接；
 - `skills/requirement-collection/`：处理需求模式和范围，调用统一脚本收集来源；
-- `skills/requirement-analysis/`：用户确认后分析已收集来源并生成 `requirement.md`；
+- `skills/requirement-analysis/`：完整收集成功后默认分析已收集来源并生成
+  `requirement.md`；
 - `skills/tower-source-collection/`、`skills/lanhu-source-collection/`、
   `skills/eolink-source-collection/`：分别读取平台事实并返回统一来源结果；
 - `skills/lanhu-design-implementation/`：开发时主动发现设计上下文并按需查询精确
@@ -77,7 +78,7 @@ curl -fsSL https://raw.githubusercontent.com/yangfanfengshun/SpecWeaver/master/i
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.8.1/scripts/setup.sh --install-cli
 ```
 
 `specweaver@specweaver` 的前半部分是插件 ID，后半部分是 marketplace 名称。
@@ -188,11 +189,13 @@ specweaver check
 不由 Agent 拼接三个来源 MCP。
 
 - 只有明确 `Bug` Tag 时直接进行快速分析，在对话中输出，不创建资料文件；
-- 普通需求意图不明确时先询问快速分析或完整资料收集；只有选择完整收集后才读取并
+- Tower 预读必须同时缓存正文和全部评论里的普通图片；快速分析必须查看全部缓存图片，
+  缓存失败时明确报告缺失证据；
+- 普通需求意图不明确时先询问快速分析或完整收集并分析；只有选择完整路线后才读取并
   展示蓝湖和 Eolink 候选；
 - 完整模式必须先确认设计稿、API 范围和输出目录，再由统一脚本写入来源文件；
-- 完整收集结束后询问是否分析；用户确认后使用 `requirement-analysis` 生成
-  `requirement.md`；
+- 完整收集为 `success` 时直接使用 `requirement-analysis` 生成 `requirement.md`，
+  不再二次询问；用户此前明确只收集时停止，`partial` 时暂停；
 - 只记录可追溯事实，不虚构缺失的设计、接口或验收条件；
 - 数据源认证失败时暂停依赖步骤，让用户重配或明确选择降级。
 

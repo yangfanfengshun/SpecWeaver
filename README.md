@@ -10,14 +10,14 @@
 ## 需求工作流
 
 SpecWeaver 把“资料收集”和“需求分析”分开：MCP 脚本负责确定性地读取 Tower、蓝湖和
-Eolink，并生成可追溯的来源文件；只有用户确认需要分析时，Agent 才读取这些资料并生成
+Eolink，并生成可追溯的来源文件；完整收集成功后，Agent 默认继续读取这些资料并生成
 `requirement.md`。因此，相同来源和范围得到的收集文件不受所用模型影响，模型能力的
 差异只体现在最终需求分析中。
 
 ```mermaid
 flowchart TD
     A["用户提供 Tower 链接"] --> B["MCP 脚本读取 Tower"]
-    B --> C["用户级轻量缓存生成 tower-raw.md 与 tower-metadata.json"]
+    B --> C["用户缓存生成 Tower 原文、元数据与图片"]
     C --> D{"任务类型"}
 
     D -->|"存在明确 Bug Tag"| E["Agent 快速分析 Tower"]
@@ -25,7 +25,7 @@ flowchart TD
     F --> G["结束：项目不生成文件"]
 
     D -->|"其他情况默认普通需求"| H{"用户意图"}
-    H -->|"快速分析"| I["Agent 读取 tower-raw.md"]
+    H -->|"快速分析"| I["Agent 读取 Tower 原文并查看缓存图片"]
     I --> J["对话输出快速分析"]
     J --> K["结束：项目不生成文件"]
 
@@ -44,20 +44,21 @@ flowchart TD
     N2 --> O
     N3 --> O
     N4 --> O
-    O --> P{"用户是否确认分析"}
+    O --> P{"收集结果与既有意图"}
 
-    P -->|"否或稍后"| Q["结束：保留已收集资料"]
-    P -->|"是"| R["Agent 综合 Tower、蓝湖和 API"]
+    P -->|"partial"| T["暂停：处理缺失来源"]
+    P -->|"success 且明确只收集"| Q["结束：保留已收集资料"]
+    P -->|"success"| R["Agent 综合 Tower、蓝湖和 API"]
     R --> S["生成并验证 requirement.md"]
 ```
 
 ## 能力
 
-- 确定性读取 Tower 正文、独立评论、子任务标题与附件索引，并在用户缓存生成
-  `tower-raw.md`；
+- 确定性读取 Tower 正文、独立评论、子任务标题与附件索引；每次 Tower 预读都在用户
+  缓存生成 `tower-raw.md`、`tower-metadata.json` 与正文/评论图片；
 - 明确 `Bug` Tag 自动快速分析，其他普通需求按用户意图选择快速分析或完整收集；
-- 完整收集由统一 MCP 把 Tower、蓝湖和 Eolink 来源直接写入项目；用户确认分析后，
-  Agent 才生成 `requirement.md`；
+- 完整收集由统一 MCP 把 Tower、蓝湖和 Eolink 来源直接写入项目；收集成功后默认由
+  Agent 继续生成 `requirement.md`，用户明确只收集时停止；
 - 蓝湖 MCP 只使用 HTTP，不依赖上游 MCP、Playwright 或 Chromium；
 - 蓝湖设计详情只读取真实 Sketch 数据，不用预览图视觉猜测结构，也不生成
   Design Tokens 或业务代码；
@@ -228,7 +229,7 @@ Agent 对话中粘贴 Cookie、密码或文件内容。
 ```bash
 codex plugin marketplace add yangfanfengshun/SpecWeaver && \
 codex plugin add specweaver@specweaver && \
-~/.codex/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
+~/.codex/plugins/cache/specweaver/specweaver/0.8.1/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。
@@ -241,7 +242,7 @@ Codex 的更新、重新安装、新任务加载和故障处理规则见
 ```bash
 claude plugin marketplace add yangfanfengshun/SpecWeaver && \
 claude plugin install specweaver@specweaver && \
-~/.claude/plugins/cache/specweaver/specweaver/0.8.0/scripts/setup.sh --install-cli
+~/.claude/plugins/cache/specweaver/specweaver/0.8.1/scripts/setup.sh --install-cli
 ```
 
 安装后另行运行 `specweaver configure`。Claude 插件清单已声明四个 MCP server，
@@ -357,11 +358,11 @@ specweaver check tower
 普通需求意图不明确时会先询问用户选择：
 
 - 快速分析：只分析 Tower，在对话中回答，不生成文件；
-- 完整资料收集：读取并展示设计稿与 API 候选，确认资料范围后由脚本生成并验证来源
-  文件，不立即生成需求文档。
+- 完整收集并分析：读取并展示设计稿与 API 候选，确认资料范围后由脚本生成并验证来源
+  文件，成功后自动分析并生成需求文档。
 
-完整收集结束后，插件会询问是否分析。只有确认后才由
-`requirement-analysis` 读取项目来源并生成 `requirement.md`。
+完整收集为 `success` 时，插件直接使用 `requirement-analysis` 读取项目来源并生成
+`requirement.md`，不再二次询问。用户明确只收集时停止，`partial` 时暂停处理缺失来源。
 
 提交当前改动时可以说：
 
@@ -444,7 +445,7 @@ SpecWeaver 由三个数据源 MCP、一个统一收集 MCP 和可组合 Skill �
 | 需求收集 MCP | 确认范围前列候选，确认后确定性编排三类来源并验证项目文件 |
 | `configure-specweaver` | 补齐或按平台更新认证信息，并检查可直接验证的数据源 |
 | `requirement-collection` | 处理快速/完整路线；完整路线只调用统一收集脚本 |
-| `requirement-analysis` | 用户确认后读取已收集来源并生成 `requirement.md` |
+| `requirement-analysis` | 完整收集成功后默认读取已收集来源并生成 `requirement.md` |
 | `tower-source-collection` | 读取 Tower 原始事实并生成可读原文与机器元数据缓存 |
 | `lanhu-source-collection` | 收集蓝湖候选、预览图、规范化结构和真实切图 |
 | `eolink-source-collection` | 收集 Eolink 接口及字段级契约事实 |
@@ -472,7 +473,8 @@ docs/tower/<Tower任务名称>/
 规范化 JSON 区分蓝湖直接提供的 `source: fact` 与图层关系推导的
 `source: derived`。机器清单保存在
 `~/.specweaver/cache/requirements/<Tower-ID>/<输出目录哈希>/manifest.json`，蓝湖
-规范化结构按 `image_id` 保存在独立缓存；用户缓存不保存图片和附件。进入开发后，
+规范化结构按 `image_id` 保存在独立缓存；Tower 正文和评论图片保存在对应任务缓存，
+其他 Tower 附件与蓝湖图片仍只在完整收集时写入项目。进入开发后，
 `lanhu-design-implementation` 会通过缓存清单定位设计，先查看项目预览图，再按文本、
 节点、坐标或区域查询精确属性，不要求用户重复说明设计稿位置，也不会把整份大型
 JSON 放进对话。

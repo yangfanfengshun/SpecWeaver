@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "SpecWeaver：确定性收集可追溯来源、按确认分析需求并整理跨项目日报。",
-    "version": "0.8.0"
+    "version": "0.8.1"
   },
   "plugins": [
     {
       "name": "specweaver",
       "source": ".",
-      "description": "需求编织器：确定性收集 Tower、蓝湖和 Eolink 来源，按确认独立分析需求，并记录跨项目日报。"
+      "description": "确定性收集 Tower、蓝湖和 Eolink 来源，按确认独立分析需求，并记录跨项目日报。"
     }
   ]
 }

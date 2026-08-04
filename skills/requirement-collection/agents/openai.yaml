@@ -1,4 +1,4 @@
 interface:
   display_name: "需求资料收集"
-  short_description: "确定性收集Tower蓝湖和Eolink来源并在分析前停止"
-  default_prompt: "Use $requirement-collection to collect deterministic sources for this requirement."
+  short_description: "确定性收集 Tower、蓝湖和 Eolink 来源，成功后自动分析并生成需求文档"
+  default_prompt: "Use $requirement-collection to collect the requirement sources and automatically analyze them after a successful collection."

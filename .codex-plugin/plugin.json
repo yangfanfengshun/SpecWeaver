@@ -1,7 +1,7 @@
 {
   "name": "specweaver",
-  "version": "0.8.0",
-  "description": "需求编织器：确定性收集 Tower、蓝湖和 Eolink 来源，按确认独立分析需求，并记录跨项目日报。",
+  "version": "0.8.1",
+  "description": "确定性收集 Tower、蓝湖和 Eolink 来源，按确认独立分析需求，并记录跨项目日报。",
   "author": {
     "name": "Yangfan",
     "url": "https://github.com/yangfanfengshun"

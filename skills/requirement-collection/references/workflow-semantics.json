@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "semantics": [
+    {
+      "id": "tower-read-caches-images",
+      "meaning": "每次读取 Tower 都缓存正文和评论中的普通图片，快速分析必须查看缓存图片并报告失败。",
+      "surfaces": [
+        {
+          "path": "mcp/tower/server.py",
+          "ordered": [
+            "async def tower_read_todo",
+            "image_cache = await cache_tower_images(data, url)",
+            "cache_file = write_tower_raw(data, url, image_cache)"
+          ]
+        },
+        {
+          "path": "skills/requirement-collection/SKILL.md",
+          "all_of": [
+            "每次读取 Tower",
+            "普通图片写入用户缓存",
+            "image_paths"
+          ],
+          "none_of": [
+            "include_images=false"
+          ]
+        },
+        {
+          "path": "AGENTS.md",
+          "all_of": [
+            "Tower 预读必须同时缓存正文和全部评论里的普通图片",
+            "快速分析必须查看全部缓存图片"
+          ]
+        },
+        {
+          "path": "CLAUDE.md",
+          "all_of": [
+            "Tower 预读必须同时缓存正文和全部评论里的普通图片",
+            "快速分析必须查看全部缓存图片"
+          ]
+        },
+        {
+          "path": "README.md",
+          "all_of": [
+            "每次 Tower 预读",
+            "正文/评论图片"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "complete-collection-uses-unified-tool",
+      "meaning": "完整收集只由 requirement_collect 确定性编排，Agent 不自行拼接来源 MCP。",
+      "surfaces": [
+        {
+          "path": "mcp/requirements/server.py",
+          "all_of": [
+            "async def requirement_collect",
+            "未确认范围时只返回候选，确认后写入项目"
+          ]
+        },
+        {
+          "path": "skills/requirement-collection/SKILL.md",
+          "all_of": [
+            "完整收集只调用统一脚本写来源文件",
+            "Agent 不组合来源 MCP"
+          ]
+        },
+        {
+          "path": "AGENTS.md",
+          "all_of": [
+            "完整模式只调用统一 `requirement_collect` 工具"
+          ]
+        },
+        {
+          "path": "CLAUDE.md",
+          "all_of": [
+            "完整模式只调用统一 `requirement_collect` 工具"
+          ]
+        },
+        {
+          "path": "README.md",
+          "all_of": [
+            "完整收集由统一 MCP"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "collection-success-auto-analyzes",
+      "meaning": "完整收集成功后默认直接进入 requirement-analysis，不再次询问是否分析。",
+      "surfaces": [
+        {
+          "path": "mcp/requirements/server.py",
+          "all_of": [
+            "直接使用 ",
+            "requirement-analysis 生成 requirement.md，不再二次询问"
+          ]
+        },
+        {
+          "path": "skills/requirement-collection/SKILL.md",
+          "all_of": [
+            "完整收集成功后默认连续执行",
+            "自动改用 `requirement-analysis`"
+          ]
+        },
+        {
+          "path": "skills/requirement-analysis/SKILL.md",
+          "all_of": [
+            "完整收集成功后自动转入"
+          ]
+        },
+        {
+          "path": "skills/requirement-collection/references/collection-decision-table.md",
+          "all_of": [
+            "| `success` | 用户未要求只收集",
+            "不二次询问是否分析"
+          ]
+        },
+        {
+          "path": "AGENTS.md",
+          "all_of": [
+            "完整收集为 `success` 时直接使用 `requirement-analysis`",
+            "不再二次询问"
+          ]
+        },
+        {
+          "path": "CLAUDE.md",
+          "all_of": [
+            "完整收集为",
+            "`success` 时直接使用 `requirement-analysis`",
+            "不再二次询问"
+          ]
+        },
+        {
+          "path": "README.md",
+          "all_of": [
+            "完整收集为 `success` 时",
+            "不再二次询问"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "explicit-collection-only-stops",
+      "meaning": "用户在收集前明确只收集或暂不分析时，成功后保留来源并停止。",
+      "surfaces": [
+        {
+          "path": "mcp/requirements/server.py",
+          "all_of": [
+            "除非用户此前明确要求只收集资料"
+          ]
+        },
+        {
+          "path": "skills/requirement-collection/SKILL.md",
+          "all_of": [
+            "明确要求“只收集资料”或“暂不分析”时",
+            "收集成功后停止"
+          ]
+        },
+        {
+          "path": "skills/requirement-collection/references/collection-decision-table.md",
+          "all_of": [
+            "| `success` | 用户此前明确要求只收集或暂不分析"
+          ]
+        },
+        {
+          "path": "AGENTS.md",
+          "all_of": [
+            "用户此前明确只收集时停止"
+          ]
+        },
+        {
+          "path": "CLAUDE.md",
+          "all_of": [
+            "用户此前明确只收集时停止"
+          ]
+        },
+        {
+          "path": "README.md",
+          "all_of": [
+            "用户明确只收集时停止"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "collection-partial-pauses",
+      "meaning": "完整收集为 partial 时先暂停，由用户选择重试、跳过、接受缺失或取消。",
+      "surfaces": [
+        {
+          "path": "mcp/requirements/server.py",
+          "all_of": [
+            "让用户选择重试失败来源、明确跳过，或明确接受现有缺失后分析"
+          ]
+        },
+        {
+          "path": "skills/requirement-collection/references/collection-decision-table.md",
+          "all_of": [
+            "| `partial` | 写入完成但来源、附件或产物存在 `unresolved` | 是",
+            "不自动分析"
+          ]
+        },
+        {
+          "path": "skills/requirement-analysis/SKILL.md",
+          "all_of": [
+            "清单整体或单个来源为 `partial` 时",
+            "缺失、失败状态和影响"
+          ]
+        },
+        {
+          "path": "AGENTS.md",
+          "all_of": [
+            "`partial` 时暂停"
+          ]
+        },
+        {
+          "path": "CLAUDE.md",
+          "all_of": [
+            "`partial` 时暂停"
+          ]
+        },
+        {
+          "path": "README.md",
+          "all_of": [
+            "`partial` 时暂停处理缺失来源"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "collection-analysis-write-boundary",
+      "meaning": "收集 Skill 只写来源，分析 Skill 不重新收集且只写 requirement.md。",
+      "surfaces": [
+        {
+          "path": "skills/requirement-collection/SKILL.md",
+          "all_of": [
+            "本 Skill 不生成 `requirement.md`"
+          ]
+        },
+        {
+          "path": "skills/requirement-analysis/SKILL.md",
+          "all_of": [
+            "不调用 Tower、蓝湖、Eolink 或 `requirement_collect` 重新收集",
+            "只生成或更新 `requirement.md`"
+          ]
+        },
+        {
+          "path": "AGENTS.md",
+          "all_of": [
+            "Skill 定义工作流，MCP 提供数据能力"
+          ]
+        },
+        {
+          "path": "CLAUDE.md",
+          "all_of": [
+            "完整模式只调用统一 `requirement_collect` 工具",
+            "已收集来源的需求分析：使用 `requirement-analysis`"
+          ]
+        },
+        {
+          "path": "README.md",
+          "all_of": [
+            "资料收集”和“需求分析”分开",
+            "Skill 是 Agent 行为和流程约束的来源；MCP 只负责"
+          ]
+        }
+      ]
+    }
+  ]
+}

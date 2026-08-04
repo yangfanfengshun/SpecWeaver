@@ -1,6 +1,6 @@
 ---
 name: requirement-analysis
-description: 分析已经由 SpecWeaver 收集并验证的 Tower、蓝湖和 Eolink 来源，综合业务规则、设计事实、API 契约、冲突与缺失并生成 requirement.md。用户在完整收集后明确要求分析需求、生成需求文档或重新分析已有来源目录时使用。不重新收集来源、不修改来源文件、不分析代码、不执行开发。
+description: 分析已经由 SpecWeaver 收集并验证的 Tower、蓝湖和 Eolink 来源，综合业务规则、设计事实、API 契约、冲突与缺失并生成 requirement.md。requirement-collection 完整收集成功后自动转入，或用户明确要求分析需求、生成需求文档、重新分析已有来源目录时使用。不重新收集来源、不修改来源文件、不分析代码、不执行开发。
 ---
 
 # 需求分析
@@ -19,7 +19,12 @@ description: 分析已经由 SpecWeaver 收集并验证的 Tower、蓝湖和 Eol
 
 ## 1. 输入门槛
 
-用户必须明确要求分析，并提供或能唯一定位已收集目录。
+从完整收集转入时，先完整读取
+[`requirement-collection` 的完整收集决策表](../requirement-collection/references/collection-decision-table.md)，
+只有表中明确指向本 Skill 的分支可以进入。除此之外，满足以下入口并提供或能唯一定位
+已收集目录：
+
+- 用户明确要求分析、生成需求文档或重新分析已有来源。
 
 项目目录至少包含：
 
